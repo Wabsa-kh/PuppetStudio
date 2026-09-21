@@ -1,0 +1,26 @@
+config_version=5
+
+[application]
+config/name="Puppet Studio"
+config/version="0.2.0-alpha"
+config/icon="res://icon.svg"
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.4", "GL Compatibility")
+
+[display]
+window/size/viewport_width=1360
+window/size/viewport_height=850
+window/size/window_width_override=1360
+window/size/window_height_override=850
+window/per_pixel_transparency/allowed=true
+window/subwindows/embed_subwindows=false
+
+[audio]
+driver/enable_input=true
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/default_filters/use_nearest_mipmap_filter=false
+environment/defaults/default_clear_color=Color(0.12, 0.13, 0.15, 1)
+
