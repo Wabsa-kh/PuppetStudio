@@ -1,43 +1,24 @@
-# Implementation status — 0.2.0 alpha
+# Implementation status — 0.3.0 alpha
 
-## Verified by automated tests / inspected rendering
+The current build adds a usable layered character/rigging workflow, native file selection, independent costumes and expression reactions, motion-key editing and local control. It is not a complete replacement release.
 
-- Detector attack, hysteresis, hold/release, finite silence, stereo energy.
-- Embedded artwork save/load, overwrite with backup, undo/redo, invalid-reference/cyclic-parent/malformed-JSON rejection.
-- Real PNG accessory import, inspector command application, expression selection/creation.
-- Simultaneous mouth and blink behavior.
-- Windows helper startup, authenticated heartbeat, stop/reset; action routing into app.
-- Native output creation, borderless/alpha request, color-key background control.
-- Actual output corner alpha and opaque artwork pixels.
-- Main workspace screenshot visually inspected on Intel HD Graphics 530 through ANGLE/D3D11.
-- Parent translation/rotation/scale and opacity inheritance, order-independent evaluation, cycle prevention, spring settling.
-- Frame timing and transparency composition for generated GIF/APNG/WebP fixtures.
-- Layer duplication with independent IDs; animation loop/one-shot timing.
+## Verified
 
-## Implemented, needs further manual verification
+- Original 40 core checks and 29 real-window workspace checks retained.
+- Advanced suite: 36 checks for expression priorities/releases, clips, costumes, persistence, 1024 output pixels and pixel-art filtering.
+- Rig suite: 29 checks for rest-preserving parenting/pivots, independent visibility rules and sine axes, limits, actual clipping/add/multiply pixels, hit testing, shortcut conflicts/configured-helper heartbeat, and authenticated real WebSocket commands.
+- Native OS import: one real Windows file-dialog test selecting a known Unicode/space-containing path and importing the image.
+- Exported executable: 18 smoke checks, including bundled nine-part rig, costumes and configured-helper startup.
+- UI screenshots are generated from the running app and inspected.
 
-- Live microphone capture/calibration and real-world speech response.
-- Real keyboard combinations with another application/game focused.
-- Grid sprite sheets, pointer tracking, pivots, mirroring, locks, all numerical editing limits and broad spring parameter combinations.
-- Autosave/recovery under crash, disk-full and large-file conditions.
-- Hide-editor/live-output lifecycle, varied displays/DPI, broad Windows hardware compatibility.
+Evidence files are in the deliverable's `evidence` folder. Test counts must be confirmed against the final logs; failures are not replaced by feature claims.
 
-## Environment limitation
+## Known limits
 
-Audio enumeration exposed only Default and no usable microphone. The app now rejects that condition instead of presenting it as live input. Actual speech capture and hotplug remain unverified.
+No usable microphone was exposed, so live capture/calibration/reconnect remain unverified. OBS capture, foreground-game physical shortcuts, macOS/Linux packages, long-session soak, final performance budgets and code signing remain unverified or unfinished. High-resolution mode is optional, not a lightweight-performance claim.
 
-## Not implemented / not verified
+Clipping supports one mask level. Child layers form a clipping group. Canvas picking uses image bounds. Clips have a numeric playhead/key list rather than multitrack curves. Rest pose should be used while adjusting pivots/parents. Shortcut conflict detection covers this app's bindings only. Generic WebSocket control is not an existing Stream Deck plugin integration.
 
-OBS capture; macOS/Linux packages; decoder conformance across complex disposal/color-profile cases; appendage/mesh rigs; selective transform inheritance; costume system; keyframe editor; clipping/blend modes; general reaction priorities; key rebinding/conflicts; output-resolution controls; click-through; final performance budgets; long-session soak; code signing/installer.
+Large-project memory handling, malformed animated-container fuzzing, extended color profiles and production crash recovery need further work. Imported PNGTuber Plus, Remix and veadotube file formats are not supported. Mesh/rope/appendage rigs, normal-map lights, throwables, multiselect, MIDI/gamepad/mouse binding, arbitrary background colors and a complete novice workflow remain open.
 
-The full replacement plan remains the target. This first executable is an early working alpha.
-
-## Latest build evidence
-
-- 40 core checks passed: detector, persistence, validation, hierarchy, spring motion, clip timing and APNG/WebP fixtures.
-- 29 workspace checks passed: real-window commands, GIF fixture, helper communication and output pixels.
-- 12 checks passed inside the exported Windows executable, including helper startup, clean output, alpha, save/reload and screenshot capture.
-- The exported workspace screenshot was visually inspected.
-- The editor import pass completes cleanly. Animated test fixtures are deliberately excluded from the editor's static-image importer.
-
-These 81 automated checks do not replace the outstanding microphone, real foreground-game shortcut, OBS, cross-platform, and long-session manual tests.
+See PNGTUBER_PLUS_AUDIT.md for the source-based comparison and FEATURE_PARITY.md for the broader target.

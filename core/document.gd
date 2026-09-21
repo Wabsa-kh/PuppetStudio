@@ -8,7 +8,7 @@ var redo_stack: Array[Dictionary] = []
 var dirty := false
 
 func new_layer(label: String) -> Dictionary:
-	return {"id": str(Time.get_ticks_usec()) + "_" + str(randi()), "name": label, "visible": true, "locked": false, "x": 0.0, "y": 0.0, "scale": 1.0, "rotation": 0.0, "pivot_x": 0.0, "pivot_y": 0.0, "flip_x": false, "flip_y": false, "opacity": 1.0, "condition": 0, "parent": "", "sway": 0.0, "float_y": 0.0, "sway_speed": 2.1, "rotation_sway": 0.0, "phase": 0.0, "bounce": 0.0, "lag": 0.12, "spring": false, "spring_frequency": 3.0, "damping": 0.65, "pointer_range": 0.0, "frames": 1, "rows": 1, "fps": 8.0, "loop": true, "image": ""}
+	return {"id": str(Time.get_ticks_usec()) + "_" + str(randi()), "name": label, "visible": true, "scale_x": 1.0, "scale_y": 1.0, "talk_rule": 0, "blink_rule": 0, "rotation_min": -360.0, "rotation_max": 360.0, "rotation_drag": 0.0, "stretch": 0.0, "clip_children": false, "locked": false, "x": 0.0, "y": 0.0, "scale": 1.0, "rotation": 0.0, "pivot_x": 0.0, "pivot_y": 0.0, "flip_x": false, "flip_y": false, "opacity": 1.0, "condition": 0, "parent": "", "sway": 0.0, "float_y": 0.0, "sway_speed": 2.1, "rotation_sway": 0.0, "phase": 0.0, "bounce": 0.0, "lag": 0.12, "spring": false, "spring_frequency": 3.0, "damping": 0.65, "pointer_range": 0.0, "frames": 1, "rows": 1, "fps": 8.0, "loop": true, "image": ""}
 
 func can_parent(child: String, parent: String) -> bool:
 	var map: Dictionary = {}
@@ -148,14 +148,21 @@ func validate(candidate: Variant) -> String:
 				return "Invalid layer number: " + key
 		if layer.scale <= 0 or layer.scale > 10 or layer.frames < 1 or layer.frames > 256 or layer.fps < 0 or layer.fps > 60:
 			return "Layer scale or animation settings are out of range."
+		if int(layer.get("blend", 0)) not in [0, 1, 2, 3]:
+			return "Invalid layer blend mode."
 		if not layer.get("visible") is bool:
 			return "Invalid layer visibility."
-		for key in ["pivot_x", "pivot_y", "float_y", "sway_speed", "rotation_sway", "phase", "spring_frequency", "damping", "pointer_range", "rows"]:
+		for key in ["pivot_x", "pivot_y", "float_y", "sway_speed", "rotation_sway", "phase", "spring_frequency", "damping", "pointer_range", "rows", "sway_speed_y", "scale_x", "scale_y", "skew", "rotation_min", "rotation_max", "rotation_drag", "stretch"]:
 			if layer.has(key) and (not (layer[key] is int or layer[key] is float) or not is_finite(float(layer[key]))):
 				return "Invalid layer setting: " + key
-		for key in ["locked", "flip_x", "flip_y", "spring", "loop"]:
+		for key in ["locked", "flip_x", "flip_y", "spring", "loop", "spring_position", "spring_rotation", "ignore_bounce", "clip_children"]:
 			if layer.has(key) and not layer[key] is bool:
 				return "Invalid layer option: " + key
+		for rule in ["talk_rule", "blink_rule"]:
+			if int(layer.get(rule, 0)) not in [0, 1, 2]:
+				return "Invalid speaking / blinking rule."
+		if float(layer.get("scale_x", 1)) <= 0 or float(layer.get("scale_y", 1)) <= 0 or float(layer.get("scale_x", 1)) > 10 or float(layer.get("scale_y", 1)) > 10 or float(layer.get("rotation_min", -360)) > float(layer.get("rotation_max", 360)):
+			return "Invalid rig scale or rotation limits."
 		if int(layer.get("rows", 1)) < 1 or int(layer.get("rows", 1)) > 64:
 			return "Invalid sprite-sheet row count."
 		if not layer.image.is_empty() and not has_art(candidate, layer.image):
@@ -168,6 +175,13 @@ func validate(candidate: Variant) -> String:
 				return "Invalid or cyclic layer attachment."
 			seen[parent_id] = true
 			parent_id = layer_ids[parent_id].parent
+	for layer in candidate.layers:
+		if not layer.get("clip_children", false): continue
+		var ancestor: String = layer.parent
+		while not ancestor.is_empty():
+			if layer_ids[ancestor].get("clip_children", false):
+				return "Nested clipping masks are not supported. Disable the ancestor mask first."
+			ancestor = layer_ids[ancestor].parent
 	for expression in candidate.expressions:
 		if not expression is Dictionary or not expression.get("name") is String:
 			return "Invalid expression."
@@ -181,12 +195,64 @@ func validate(candidate: Variant) -> String:
 			return "Invalid project setting: " + key
 	if not candidate.get("blink") is bool:
 		return "Invalid blink setting."
-	for key in ["base_x", "base_y", "base_scale", "base_rotation", "blink_min", "blink_max", "blink_duration", "idle_dim"]:
+	for key in ["base_x", "base_y", "base_scale", "base_rotation", "blink_min", "blink_max", "blink_duration", "idle_dim", "bounce_force", "bounce_gravity"]:
 		if candidate.has(key) and (not (candidate[key] is int or candidate[key] is float) or not is_finite(float(candidate[key]))):
 			return "Invalid character transform."
+	var costumes: Variant = candidate.get("costumes", [])
+	if not costumes is Array or costumes.size() > 32:
+		return "Use no more than 32 costumes."
+	for costume in costumes:
+		if not costume is Dictionary or not costume.get("name") is String or not costume.get("layers") is Dictionary:
+			return "Invalid costume."
+		for id in costume.layers:
+			if not id is String or not costume.layers[id] is bool:
+				return "Invalid costume visibility."
+	var hotkey_owners: Array = candidate.layers.duplicate()
+	hotkey_owners.append_array(costumes)
+	for owner in hotkey_owners:
+		for field in ["hotkey", "hotkey_mods"]:
+			if owner.has(field) and (not (owner[field] is int or owner[field] is float) or not is_finite(float(owner[field]))):
+				return "Invalid keyboard shortcut."
+		if int(owner.get("hotkey", 0)) < 0 or int(owner.get("hotkey", 0)) > 254 or int(owner.get("hotkey_mods", 3)) < 0 or int(owner.get("hotkey_mods", 3)) > 7:
+			return "Keyboard shortcut is out of range."
+	for expression in candidate.expressions:
+		if expression.has("trigger_mode") and (not expression.trigger_mode is float and not expression.trigger_mode is int):
+			return "Invalid expression trigger."
+		if int(expression.get("trigger_mode", 0)) not in [0, 1, 2, 3]:
+			return "Invalid expression trigger mode."
+		var seconds: Variant = expression.get("reaction_seconds", 2.0)
+		if not (seconds is float or seconds is int) or not is_finite(float(seconds)) or seconds < 0.1 or seconds > 60:
+			return "Invalid reaction duration."
+	for layer in candidate.layers:
+		if not layer.has("clip"):
+			continue
+		var clip: Variant = layer.clip
+		if not clip is Dictionary or not clip.get("keys") is Array or clip["keys"].size() > 128:
+			return "Invalid motion clip."
+		if not clip.get("enabled") is bool or not clip.get("loop") is bool:
+			return "Invalid motion clip options."
+		var duration: Variant = clip.get("duration")
+		if not (duration is float or duration is int) or not is_finite(float(duration)) or duration < 0.1 or duration > 60:
+			return "Invalid motion duration."
+		var last := -1.0
+		for key in clip["keys"]:
+			if not key is Dictionary:
+				return "Invalid motion keyframe."
+			for field in ["time", "x", "y", "rotation", "scale", "opacity", "ease"]:
+				if not (key.get(field) is float or key.get(field) is int) or not is_finite(float(key[field])):
+					return "Invalid keyframe value."
+			if key.time <= last or key.time < 0 or key.time > duration or key.scale <= 0 or key.scale > 10 or key.opacity < 0 or key.opacity > 1 or int(key.ease) not in [0, 1, 2]:
+				return "Keyframes must be ordered and inside the clip duration."
+			last = float(key.time)
+	if int(candidate.get("output_size", 512)) not in [256, 512, 1024, 2048]:
+		return "Invalid output resolution."
+	if candidate.has("pixel_art") and not candidate.pixel_art is bool:
+		return "Invalid pixel-art setting."
 	return ""
 
 func save_to(path: String) -> String:
+	var error := validate(data)
+	if not error.is_empty(): return error
 	var payload := JSON.stringify(data)
 	if payload.length() > MAX_FILE_BYTES:
 		return "This alpha limits a project to 48 MB. Use smaller artwork."

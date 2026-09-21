@@ -2,7 +2,7 @@ config_version=5
 
 [application]
 config/name="Puppet Studio"
-config/version="0.2.0-alpha"
+config/version="0.3.0-alpha"
 config/icon="res://icon.svg"
 run/main_scene="res://main.tscn"
 config/features=PackedStringArray("4.4", "GL Compatibility")

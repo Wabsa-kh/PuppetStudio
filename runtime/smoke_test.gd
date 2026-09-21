@@ -20,11 +20,15 @@ func run(app: Control, screenshot: String = "") -> void:
 	app.talk_button.button_pressed = true
 	app._toggle_test()
 	app.avatar.force_blink()
-	await get_tree().process_frame
+	# Step a known frame so shader startup cannot consume the entire blink.
+	app._process(1.0 / 60.0)
+	app.avatar._process(1.0 / 60.0)
 	check(app.avatar.talking and app.avatar.blinking, "Exported mouth and eyes run independently")
 	var error: String = app.global_input.start()
 	check(error.is_empty(), "Packaged background input helper starts")
-	await get_tree().create_timer(1.5).timeout
+	for attempt in range(80):
+		if app.global_input.received_heartbeat: break
+		await get_tree().create_timer(0.1).timeout
 	check(app.global_input.received_heartbeat, "Packaged input helper heartbeat arrives")
 	app.global_input.stop()
 	app._toggle_output()
@@ -49,13 +53,35 @@ func run(app: Control, screenshot: String = "") -> void:
 	app.avatar.blink_left = 0
 	app.avatar.next_blink = 20
 	app._select_expression(0)
+	app._load_project("res://samples/Rigged-Mochi.puppet")
+	check(app.document.data.layers.size() == 9, "Packaged layered rig example loads")
+	check(app.document.validate(app.document.data).is_empty(), "Packaged rig example validates")
+	app.selected_layer = 1
+	app._refresh_all()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(app.avatar.canvases.size() == 9, "Packaged rig creates nine sprite renderers")
+	app._cycle_costume(0)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var scarf: Dictionary = app.document.data.layers[8]
+	check(not app.avatar.solver.visible[scarf.id], "Packaged costume hides scarf")
+	app._cycle_costume(0)
+	var shortcut_error: String = app._start_shortcuts()
+	check(shortcut_error.is_empty(), "Packaged helper accepts configured bindings")
+	for attempt in range(80):
+		if app.global_input.received_heartbeat: break
+		await get_tree().create_timer(0.1).timeout
+	check(app.global_input.received_heartbeat, "Configured helper reports healthy heartbeat")
+	app.global_input.stop()
 	app.document.dirty = false
-	app.status.text = "Ready · Add your artwork or enable a microphone in the Audio tab."
+	app.status.text = "Layered rig example · Select a part, move its pivot, or try talking and blinking."
 	await get_tree().process_frame
 	await RenderingServer.frame_post_draw
 	if not screenshot.is_empty():
-		app.document.save_to(screenshot.get_base_dir().path_join("Mochi.puppet"))
+		app.document.save_to(screenshot.get_base_dir().path_join("Rigged-Mochi.puppet"))
 		var image: Image = app.get_viewport().get_texture().get_image()
 		check(image.save_png(screenshot) == OK, "Exported workspace screenshot saved")
 	print("EXPORTED_RESULT: %d checks, %d failures" % [checks, failures])
 	get_tree().quit(1 if failures else 0)
+

@@ -4,11 +4,12 @@ signal action_received(action: String, pressed: bool)
 var udp := PacketPeerUDP.new()
 var process_id := -1
 var token := ""
+var configuration := ""
 var active := false
 var heartbeat_age := 0.0
 var received_heartbeat := false
 
-func start() -> String:
+func start(bindings := "") -> String:
 	if OS.get_name() != "Windows":
 		return "Global input is currently implemented for Windows only."
 	stop()
@@ -21,10 +22,11 @@ func start() -> String:
 	if error != OK:
 		return "Could not open the local input channel."
 	token = Crypto.new().generate_random_bytes(20).hex_encode()
-	process_id = OS.create_process(path, [str(udp.get_local_port()), str(OS.get_process_id()), token], false)
+	process_id = OS.create_process(path, [str(udp.get_local_port()), str(OS.get_process_id()), token, bindings], false)
 	if process_id < 0:
 		udp.close()
 		return "Could not start background input."
+	configuration = bindings
 	active = true
 	heartbeat_age = 0.0
 	received_heartbeat = false
@@ -37,6 +39,7 @@ func stop() -> void:
 	udp.close()
 	active = false
 	action_received.emit("ptt", false)
+	action_received.emit("release_all", false)
 
 func _process(delta: float) -> void:
 	if not active:
@@ -52,7 +55,7 @@ func _process(delta: float) -> void:
 		received_heartbeat = true
 		if message[1] != "heartbeat":
 			action_received.emit(message[1], message[2] == "1")
-	if heartbeat_age > (2.0 if received_heartbeat else 5.0):
+	if heartbeat_age > (2.0 if received_heartbeat else 10.0):
 		stop()
 
 func _exit_tree() -> void:

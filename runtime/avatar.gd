@@ -1,5 +1,20 @@
 extends Node2D
 
+const LayerCanvas = preload("res://runtime/layer_canvas.gd")
+var canvases: Dictionary = {}
+var hierarchy_signature := ""
+var layer_toggles: Dictionary = {}
+
+const MotionClip = preload("res://core/motion_clip.gd")
+var hop := 0.0
+var hop_velocity := 0.0
+var was_talking := false
+var last_costume := -1
+var costume := -1
+var clip_time := 0.0
+var clips_playing := false
+var clips_preview := false
+
 const PoseSolver = preload("res://core/pose_solver.gd")
 var solver = PoseSolver.new()
 var document
@@ -31,6 +46,8 @@ func reset_motion() -> void:
 func _process(delta: float) -> void:
 	if document == null or document.data.is_empty():
 		return
+	if clips_playing:
+		clip_time += delta
 	clock += delta
 	expression_clock += delta
 	if previous_expression != expression:
@@ -45,16 +62,78 @@ func _process(delta: float) -> void:
 			force_blink()
 	blink_left = maxf(0, blink_left - delta)
 	blinking = blink_left > 0
+	if (talking and not was_talking) or (costume != last_costume and document.data.get("bounce_on_costume", false)):
+		hop_velocity = -float(document.data.get("bounce_force", 80.0))
+	was_talking = talking
+	last_costume = costume
+	if hop < 0 or hop_velocity < 0:
+		hop_velocity += float(document.data.get("bounce_gravity", 500.0)) * minf(delta, 0.05)
+		hop += hop_velocity * minf(delta, 0.05)
+		if hop >= 0:
+			hop = 0.0
+			hop_velocity = 0.0
 	var amount := float(document.data.motion) if motion_enabled else 0.0
 	var offset := Vector2(0, -absf(sin(clock * (10.0 if talking else 2.0))) * (9 if talking else 2) * amount)
+	offset.y += hop * amount
 	root_transform = Transform2D(deg_to_rad(float(document.data.get("base_rotation", 0))), Vector2.ONE * float(document.data.get("base_scale", 1)), 0, Vector2(256 + float(document.data.get("base_x", 0)), 256 + float(document.data.get("base_y", 0))) + offset)
 	root_opacity = 1.0 if talking else 1.0 - float(document.data.get("idle_dim", 0.0))
-	poses = solver.evaluate(document.data.layers, delta, clock, talking, blinking, amount, pointer)
+	var costumes: Array = document.data.get("costumes", [])
+	var outfit: Dictionary = costumes[costume].layers if costume >= 0 and costume < costumes.size() else {}
+	var evaluated := MotionClip.layers_for_pose(document.data.layers, outfit, clip_time, clips_playing or clips_preview)
+	for layer in evaluated:
+		if layer_toggles.has(layer.id): layer.visible = layer_toggles[layer.id]
+	poses = solver.evaluate(evaluated, delta, clock, talking, blinking, amount, pointer)
 	for layer in document.data.layers:
 		var shown: bool = solver.visible.get(layer.id, false)
 		if shown and not last_visible.get(layer.id, false):
 			layer_animation_start[layer.id] = clock
 		last_visible[layer.id] = shown
+		if not canvases.has(layer.id):
+			var canvas := LayerCanvas.new()
+			canvas.document = document
+			add_child(canvas)
+			canvases[layer.id] = canvas
+		var canvas: Node2D = canvases[layer.id]
+		canvas.visible = shown
+		canvas.transform = root_transform * poses.get(layer.id, Transform2D.IDENTITY)
+		if layer.get("ignore_bounce", false):
+			canvas.position -= offset
+		canvas.configure(layer, clock - float(layer_animation_start.get(layer.id, 0)), root_opacity, float(solver.opacity.get(layer.id, 1.0)))
+	for id in canvases.keys():
+		if not solver.index.has(id):
+			for child in canvases[id].get_children():
+				child.reparent(self, false)
+			canvases[id].queue_free()
+			canvases.erase(id)
+	var signature := ""
+	for layer in document.data.layers:
+		signature += layer.id + ":" + layer.parent + str(layer.get("clip_children", false))
+	if signature != hierarchy_signature:
+		for canvas in canvases.values():
+			if canvas.get_parent() != self: canvas.reparent(self, false)
+		hierarchy_signature = signature
+	for layer in document.data.layers:
+		var canvas: Node2D = canvases[layer.id]
+		var clip_parent := ""
+		var ancestor: String = layer.parent
+		while not ancestor.is_empty() and solver.index.has(ancestor):
+			if solver.index[ancestor].get("clip_children", false):
+				clip_parent = ancestor
+				break
+			ancestor = solver.index[ancestor].parent
+		var desired: Node = self if clip_parent.is_empty() else canvases[clip_parent]
+		if canvas.get_parent() != desired:
+			canvas.reparent(desired, false)
+		var world: Transform2D = root_transform * poses.get(layer.id, Transform2D.IDENTITY)
+		if layer.get("ignore_bounce", false): world.origin -= offset
+		if clip_parent.is_empty():
+			canvas.transform = world
+		else:
+			var mask_world: Transform2D = root_transform * poses[clip_parent]
+			if solver.index[clip_parent].get("ignore_bounce", false): mask_world.origin -= offset
+			canvas.transform = mask_world.affine_inverse() * world
+		desired.move_child(canvas, desired.get_child_count() - 1)
+		canvas.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW if layer.get("clip_children", false) else CanvasItem.CLIP_CHILDREN_DISABLED
 	queue_redraw()
 
 func _draw() -> void:
@@ -75,21 +154,4 @@ func _draw() -> void:
 		var extent := image.get_size() * fit
 		draw_set_transform_matrix(root_transform)
 		draw_texture_rect(image, Rect2(Vector2(0, 9) - extent * 0.5, extent), false, Color(root_opacity, root_opacity, root_opacity, 1))
-	for layer in document.data.layers:
-		if not solver.visible.get(layer.id, false):
-			continue
-		var elapsed := clock - float(layer_animation_start.get(layer.id, 0))
-		var tex: Texture2D = document.frame_texture(layer.image, elapsed, layer.get("loop", true))
-		if tex == null:
-			continue
-		var columns := maxi(1, int(layer.frames))
-		var rows := maxi(1, int(layer.get("rows", 1)))
-		var count := columns * rows
-		var frame := int(elapsed * float(layer.fps))
-		frame = frame % count if layer.get("loop", true) else mini(frame, count - 1)
-		var extent := Vector2(tex.get_width() / float(columns), tex.get_height() / float(rows))
-		var source := Rect2(Vector2(frame % columns, frame / columns) * extent, extent)
-		var pivot := Vector2(float(layer.get("pivot_x", 0)), float(layer.get("pivot_y", 0)))
-		draw_set_transform_matrix(root_transform * poses.get(layer.id, Transform2D.IDENTITY))
-		draw_texture_rect_region(tex, Rect2(-extent * 0.5 - pivot, extent), source, Color(root_opacity, root_opacity, root_opacity, solver.opacity.get(layer.id, 1.0)))
 	draw_set_transform(Vector2.ZERO)

@@ -6,6 +6,21 @@ const Avatar = preload("res://runtime/avatar.gd")
 const Checker = preload("res://ui/checker.gd")
 const GlobalInput = preload("res://platform/global_input.gd")
 const AnimatedDecoder = preload("res://core/animated_decoder.gd")
+const PerformanceState = preload("res://core/performance_state.gd")
+const MotionClip = preload("res://core/motion_clip.gd")
+var performance = PerformanceState.new()
+var key_time := 0.0
+var key_ease := 0
+const ControlServer = preload("res://platform/control_server.gd")
+var control_server
+var control_port := 19532
+var resolution_label: Label
+const Rig = preload("res://core/rig.gd")
+const RigOverlay = preload("res://ui/rig_overlay.gd")
+var rig_visible := true
+var canvas_tool := 0
+var last_import_directory := ""
+var rig_overlay
 var global_input
 var global_ptt := false
 var dragging_art := false
@@ -39,6 +54,7 @@ var output_button: Button
 var talk_button: Button
 var selected_slot := "idle"
 var import_as_layer := false
+var export_art_dialog: FileDialog
 var import_dialog: FileDialog
 var save_dialog: FileDialog
 var load_dialog: FileDialog
@@ -75,6 +91,10 @@ func _ready() -> void:
 	mic = Microphone.new()
 	add_child(mic)
 	mic.devices_changed.connect(_refresh_devices)
+	control_server = ControlServer.new()
+	add_child(control_server)
+	control_server.command_received.connect(_remote_command)
+	control_server.command_validator = _validate_remote_command
 	global_input = GlobalInput.new()
 	add_child(global_input)
 	global_input.action_received.connect(_global_action)
@@ -190,9 +210,11 @@ func _build_ui() -> void:
 	var menubar := HBoxContainer.new()
 	root.add_child(menubar)
 	menubar.add_child(_label("PUPPET STUDIO", 13, "e3e5db"))
-	menubar.add_child(_label(" /  0.2 ALPHA", 11, "7f8794"))
+	menubar.add_child(_label(" /  0.3 ALPHA", 11, "7f8794"))
 	menubar.add_child(VSeparator.new())
-	menubar.add_child(_button("Open…", func(): load_dialog.popup_centered_ratio(0.65)))
+	menubar.add_child(_button("Open…", func(): load_dialog.popup_file_dialog()))
+	menubar.add_child(_button("Rig example", func(): _request_load("res://samples/Rigged-Mochi.puppet")))
+	menubar.add_child(_button("Export art…", func(): export_art_dialog.popup_file_dialog()))
 	menubar.add_child(_button("Save", _save_project, "Ctrl+S • Portable project with embedded artwork"))
 	menubar.add_child(_button("Save as…", _save_as))
 	menubar.add_child(_button("Undo", _undo, "Ctrl+Z"))
@@ -233,6 +255,7 @@ func _build_ui() -> void:
 	layer_actions.add_child(_button("−", _delete_layer, "Delete selected accessory"))
 	layer_actions.add_child(_button("↑", func(): _move_layer(-1), "Move down in draw order"))
 	layer_actions.add_child(_button("↓", func(): _move_layer(1), "Move up in draw order"))
+	left.add_child(_button("New layered character", _new_layered_character))
 	left.add_child(_button("Duplicate selected layer", _duplicate_layer, "Copy artwork and properties; editable with Undo"))
 	_section(left, "Expression artwork")
 	for slot in ["idle", "talk", "blink", "talk_blink"]:
@@ -250,6 +273,26 @@ func _build_ui() -> void:
 	var canvas_tools := HBoxContainer.new()
 	center.add_child(canvas_tools)
 	canvas_tools.add_child(_label("AVATAR CANVAS", 11, "939da9"))
+	var tools := OptionButton.new()
+	for caption in ["Move", "Pivot", "Rotate", "Scale"]:
+		tools.add_item(caption)
+	tools.item_selected.connect(func(i): canvas_tool = i)
+	canvas_tools.add_child(tools)
+	var guides := CheckBox.new()
+	guides.text = "Rig"
+	guides.button_pressed = rig_visible
+	guides.toggled.connect(func(v): rig_visible = v)
+	canvas_tools.add_child(guides)
+	var freeze := CheckBox.new()
+	freeze.text = "Rest pose"
+	freeze.toggled.connect(func(v):
+		avatar.motion_enabled = not v
+		if v:
+			avatar.clips_playing = false
+			avatar.clips_preview = false
+		avatar.reset_motion()
+	)
+	canvas_tools.add_child(freeze)
 	_spacer(canvas_tools)
 	canvas_tools.add_child(_button("−", func(): _set_zoom(zoom - 0.15)))
 	canvas_tools.add_child(_button("Fit", func(): _set_zoom(1.0)))
@@ -268,6 +311,11 @@ func _build_ui() -> void:
 	preview_texture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	preview_texture.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	preview_area.add_child(preview_texture)
+	rig_overlay = RigOverlay.new()
+	rig_overlay.app = self
+	rig_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rig_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	preview_area.add_child(rig_overlay)
 	preview_area.resized.connect(_resize_preview)
 	var tests := HBoxContainer.new()
 	center.add_child(tests)
@@ -276,7 +324,7 @@ func _build_ui() -> void:
 	tests.add_child(talk_button)
 	tests.add_child(_button("Blink", func(): avatar.force_blink()))
 	_spacer(tests)
-	tests.add_child(_label("512 × 512 output  •  alpha", 11, "88919e"))
+	tests.add_child(_label("Clean capture output  •  alpha", 11, "88919e"))
 	var expression_panel := _panel()
 	center.add_child(expression_panel)
 	var expressions_box := VBoxContainer.new()
@@ -292,7 +340,7 @@ func _build_ui() -> void:
 	var right_column := VBoxContainer.new()
 	right_panel.add_child(right_column)
 	inspector_tabs = TabBar.new()
-	for tab in ["Properties", "Audio", "Output"]:
+	for tab in ["Edit", "Audio", "Output", "Perform"]:
 		inspector_tabs.add_tab(tab)
 	inspector_tabs.tab_changed.connect(func(index):
 		inspector_tab = index
@@ -311,14 +359,24 @@ func _build_ui() -> void:
 	root.add_child(status)
 
 func _build_dialogs() -> void:
+	export_art_dialog = FileDialog.new()
+	export_art_dialog.use_native_dialog = true
+	export_art_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	export_art_dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+	export_art_dialog.title = "Choose an artwork export folder"
+	export_art_dialog.dir_selected.connect(_export_artwork)
+	add_child(export_art_dialog)
 	import_dialog = FileDialog.new()
+	import_dialog.use_native_dialog = true
 	import_dialog.title = "Import artwork"
 	import_dialog.access = FileDialog.ACCESS_FILESYSTEM
 	import_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
 	import_dialog.filters = PackedStringArray(["*.png,*.apng,*.webp,*.jpg,*.jpeg,*.gif ; Static and animated artwork"])
 	import_dialog.file_selected.connect(_import_selected)
+	import_dialog.files_selected.connect(_import_many)
 	add_child(import_dialog)
 	save_dialog = FileDialog.new()
+	save_dialog.use_native_dialog = true
 	save_dialog.title = "Save portable avatar"
 	save_dialog.access = FileDialog.ACCESS_FILESYSTEM
 	save_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
@@ -326,12 +384,22 @@ func _build_dialogs() -> void:
 	save_dialog.file_selected.connect(_save_to)
 	add_child(save_dialog)
 	load_dialog = FileDialog.new()
+	load_dialog.use_native_dialog = true
 	load_dialog.title = "Open avatar"
 	load_dialog.access = FileDialog.ACCESS_FILESYSTEM
 	load_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
 	load_dialog.filters = PackedStringArray(["*.puppet ; Puppet Studio avatar"])
 	load_dialog.file_selected.connect(_request_load)
 	add_child(load_dialog)
+	var settings := ConfigFile.new()
+	settings.load("user://workspace.cfg")
+	last_import_directory = settings.get_value("folders", "artwork", OS.get_system_dir(OS.SYSTEM_DIR_PICTURES))
+	if DirAccess.dir_exists_absolute(last_import_directory):
+		import_dialog.current_dir = last_import_directory
+	var projects: String = settings.get_value("folders", "projects", OS.get_system_dir(OS.SYSTEM_DIR_DOCUMENTS))
+	if DirAccess.dir_exists_absolute(projects):
+		load_dialog.current_dir = projects
+		save_dialog.current_dir = projects
 	notice = AcceptDialog.new()
 	notice.title = "Puppet Studio"
 	add_child(notice)
@@ -361,8 +429,10 @@ func _build_dialogs() -> void:
 	add_child(recovery_dialog)
 
 func _refresh_all() -> void:
+	if global_input.active: _restart_shortcuts()
 	selected_expression = clampi(selected_expression, 0, document.data.expressions.size() - 1)
-	avatar.expression = selected_expression
+	avatar.expression = performance.update(0, document.data.expressions.size())
+	_apply_render_settings()
 	selected_layer = mini(selected_layer, document.data.layers.size() - 1)
 	layers_list.clear()
 	layers_list.add_item("◈  Base character")
@@ -415,6 +485,13 @@ func _refresh_inspector() -> void:
 		_number(inspector, "Blink maximum (s)", float(document.data.get("blink_max", 5.2)), 0.5, 20, 0.1, _set_base_value.bind("blink_max"))
 		_number(inspector, "Blink duration (s)", float(document.data.get("blink_duration", 0.14)), 0.04, 1, 0.01, _set_base_value.bind("blink_duration"))
 		_number(inspector, "Dim while silent", float(document.data.get("idle_dim", 0.0)), 0, 0.8, 0.05, _set_base_value.bind("idle_dim"))
+		_number(inspector, "Bounce force", float(document.data.get("bounce_force", 80)), 0, 300, 5, _set_base_value.bind("bounce_force"))
+		_number(inspector, "Bounce gravity", float(document.data.get("bounce_gravity", 500)), 100, 2000, 25, _set_base_value.bind("bounce_gravity"))
+		var bounce_costume := CheckBox.new()
+		bounce_costume.text = "Bounce on costume change"
+		bounce_costume.button_pressed = document.data.get("bounce_on_costume", false)
+		bounce_costume.toggled.connect(func(v): _set_project("bounce_on_costume", v))
+		inspector.add_child(bounce_costume)
 		inspector.add_child(_button("Reset motion", func(): avatar.reset_motion()))
 	var property_count := inspector.get_child_count()
 	_section(inspector, "Microphone")
@@ -460,7 +537,7 @@ func _refresh_inspector() -> void:
 	global_toggle.tooltip_text = "Ctrl+Alt+1–9: expression · Ctrl+Alt+M: mute · Ctrl+Alt+B: blink · Ctrl+Alt+Space: PTT"
 	global_toggle.toggled.connect(func(enabled):
 		if enabled:
-			var error: String = global_input.start()
+			var error: String = _start_shortcuts()
 			if not error.is_empty():
 				_message(error)
 				global_toggle.set_pressed_no_signal(false)
@@ -496,8 +573,45 @@ func _refresh_inspector() -> void:
 			output_window.always_on_top = v
 	)
 	inspector.add_child(top)
+	var resolution := OptionButton.new()
+	for size_px in [256, 512, 1024, 2048]:
+		resolution.add_item(str(size_px) + " × " + str(size_px))
+	resolution.select([256, 512, 1024, 2048].find(int(document.data.get("output_size", 512))))
+	resolution.item_selected.connect(func(i):
+		_set_project("output_size", [256, 512, 1024, 2048][i])
+		_apply_render_settings()
+	)
+	inspector.add_child(_label("Capture resolution", 12))
+	inspector.add_child(resolution)
+	var pixels := CheckBox.new()
+	pixels.text = "Crisp pixel-art filtering"
+	pixels.button_pressed = document.data.get("pixel_art", false)
+	pixels.toggled.connect(func(v):
+		_set_project("pixel_art", v)
+		_apply_render_settings()
+	)
+	inspector.add_child(pixels)
+	_section(inspector, "Local WebSocket control")
+	_number(inspector, "Local port", control_port, 1024, 65535, 1, func(v): control_port = int(v))
+	inspector.add_child(_button("Stop control server" if control_server.active else "Start control server", func():
+		if control_server.active:
+			control_server.stop()
+		else:
+			var error: String = control_server.start(control_port)
+			if not error.is_empty():
+				_message(error)
+		_refresh_inspector()
+	))
+	if control_server.active:
+		inspector.add_child(_label("ws://127.0.0.1:" + str(control_server.port), 12))
+		inspector.add_child(_button("Copy connection details", func():
+			DisplayServer.clipboard_set(JSON.stringify({"url": "ws://127.0.0.1:" + str(control_server.port), "token": control_server.token}))
+			status.text = "Connection details copied. The token changes when the server restarts."
+		))
+	var output_end := inspector.get_child_count()
+	_build_performance_inspector()
 	for index in range(inspector.get_child_count()):
-		var group := 0 if index < property_count else (1 if index < audio_end else 2)
+		var group := 0 if index < property_count else (1 if index < audio_end else (2 if index < output_end else 3))
 		inspector.get_child(index).visible = group == inspector_tab
 	updating = false
 
@@ -516,22 +630,38 @@ func _build_layer_inspector() -> void:
 	visibility.button_pressed = layer.visible
 	visibility.toggled.connect(func(v): _set_layer("visible", v))
 	inspector.add_child(visibility)
-	for toggle in [["Lock canvas position", "locked"], ["Mirror horizontally", "flip_x"], ["Mirror vertically", "flip_y"], ["Spring follow-through", "spring"], ["Loop animation", "loop"]]:
+	for toggle in [["Lock canvas position", "locked"], ["Mirror horizontally", "flip_x"], ["Mirror vertically", "flip_y"], ["Spring follow-through", "spring"], ["Loop animation", "loop"], ["Position spring", "spring_position"], ["Rotation spring", "spring_rotation"], ["Ignore body bounce", "ignore_bounce"], ["Clip linked layers to this image", "clip_children"]]:
 		var control := CheckBox.new()
 		control.text = toggle[0]
-		control.button_pressed = layer.get(toggle[1], toggle[1] == "loop")
+		control.button_pressed = layer.get(toggle[1], toggle[1] in ["loop", "spring_position", "spring_rotation"])
 		control.toggled.connect(_set_layer.bind(toggle[1]))
 		inspector.add_child(control)
-	for entry in [["X offset", "x", -512, 512, 1], ["Y offset", "y", -512, 512, 1], ["Scale", "scale", 0.05, 4, 0.05], ["Rotation", "rotation", -180, 180, 1], ["Pivot X", "pivot_x", -2048, 2048, 1], ["Pivot Y", "pivot_y", -2048, 2048, 1], ["Opacity", "opacity", 0, 1, 0.05], ["Sway X", "sway", 0, 60, 1], ["Float Y", "float_y", 0, 60, 1], ["Sway speed", "sway_speed", 0, 12, 0.1], ["Rotation sway", "rotation_sway", 0, 45, 1], ["Bounce", "bounce", 0, 60, 1], ["Spring frequency", "spring_frequency", 0.5, 12, 0.1], ["Spring damping", "damping", 0.1, 2, 0.05], ["Pointer follow range", "pointer_range", 0, 80, 1], ["Sheet columns", "frames", 1, 64, 1], ["Sheet rows", "rows", 1, 64, 1], ["Animation fps", "fps", 0, 30, 1]]:
+	for entry in [["X offset", "x", -512, 512, 1], ["Y offset", "y", -512, 512, 1], ["Scale", "scale", 0.05, 4, 0.05], ["Width scale", "scale_x", 0.05, 4, 0.05], ["Height scale", "scale_y", 0.05, 4, 0.05], ["Rotation", "rotation", -180, 180, 1], ["Pivot X", "pivot_x", -2048, 2048, 1], ["Pivot Y", "pivot_y", -2048, 2048, 1], ["Opacity", "opacity", 0, 1, 0.05], ["Sway X", "sway", 0, 60, 1], ["Float Y", "float_y", 0, 60, 1], ["Sway speed X", "sway_speed", 0, 12, 0.1], ["Sway speed Y", "sway_speed_y", 0, 12, 0.1], ["Rotation min", "rotation_min", -360, 360, 1], ["Rotation max", "rotation_max", -360, 360, 1], ["Rotation drag", "rotation_drag", -4, 4, 0.1], ["Squash / stretch", "stretch", 0, 2, 0.05], ["Rotation sway", "rotation_sway", 0, 45, 1], ["Bounce", "bounce", 0, 60, 1], ["Spring frequency", "spring_frequency", 0.5, 12, 0.1], ["Spring damping", "damping", 0.1, 2, 0.05], ["Pointer follow range", "pointer_range", 0, 80, 1], ["Sheet columns", "frames", 1, 64, 1], ["Sheet rows", "rows", 1, 64, 1], ["Animation fps", "fps", 0, 30, 1]]:
 		if not layer.has(entry[1]):
-			layer[entry[1]] = document.new_layer("")[entry[1]]
+			layer[entry[1]] = document.new_layer("").get(entry[1], layer.get("sway_speed", 2.1) if entry[1] == "sway_speed_y" else 0.0)
 		_number(inspector, entry[0], float(layer[entry[1]]), entry[2], entry[3], entry[4], _set_layer.bind(entry[1]), true)
+	for rule in [["Speech visibility", "talk_rule", ["Any speech state", "While talking", "While silent"]], ["Eye visibility", "blink_rule", ["Any eye state", "While blinking", "While eyes open"]]]:
+		inspector.add_child(_label(rule[0], 12))
+		var picker := OptionButton.new()
+		for caption in rule[2]: picker.add_item(caption)
+		picker.select(int(layer.get(rule[1], 0)))
+		picker.item_selected.connect(func(i):
+			_set_layer(rule[1], i)
+			layer.condition = 0
+		)
+		inspector.add_child(picker)
 	var condition := OptionButton.new()
 	for title in ["Always visible", "While talking", "While silent", "While blinking", "While eyes open"]:
 		condition.add_item(title)
 	condition.select(int(layer.condition))
 	condition.item_selected.connect(func(v): _set_layer("condition", v))
 	inspector.add_child(condition)
+	var blend := OptionButton.new()
+	for caption in ["Normal blend", "Add / glow", "Subtract", "Multiply / shadow"]:
+		blend.add_item(caption)
+	blend.select(int(layer.get("blend", 0)))
+	blend.item_selected.connect(func(i): _set_layer("blend", i))
+	inspector.add_child(blend)
 	inspector.add_child(_label("Parent · position / rotation / scale", 11, "929ba8"))
 	var parent_picker := OptionButton.new()
 	parent_picker.add_item("None")
@@ -544,8 +674,10 @@ func _build_layer_inspector() -> void:
 		parent_picker.set_item_metadata(item_index, candidate.id)
 		if candidate.id == layer.parent:
 			parent_picker.select(item_index)
-	parent_picker.item_selected.connect(func(i): _set_layer("parent", parent_picker.get_item_metadata(i)))
+	parent_picker.item_selected.connect(func(i): _reparent_layer(parent_picker.get_item_metadata(i)))
 	inspector.add_child(parent_picker)
+	_build_hotkey_control(layer, 0)
+	inspector.add_child(_button("Toggle layer live", _toggle_live_layer.bind(layer.id)))
 	inspector.add_child(_button("Replace layer image…", _replace_layer_dialog))
 
 func _number(parent: VBoxContainer, label: String, value: float, minimum: float, maximum: float, step: float, callback: Callable, reverse_args := false) -> void:
@@ -572,7 +704,15 @@ func _set_layer(first: Variant, second: Variant) -> void:
 	var key: String = first if first is String else second
 	var value: Variant = second if first is String else first
 	document.checkpoint()
-	document.data.layers[selected_layer][key] = value
+	var layer: Dictionary = document.data.layers[selected_layer]
+	var previous: Variant = layer.get(key)
+	layer[key] = value
+	var error: String = document.validate(document.data)
+	if not error.is_empty():
+		if previous == null: layer.erase(key)
+		else: layer[key] = previous
+		_message(error)
+		_refresh_inspector()
 
 func _set_project(key: String, value: Variant) -> void:
 	if updating:
@@ -587,6 +727,7 @@ func _select_layer(index: int) -> void:
 	_refresh_inspector()
 
 func _select_expression(index: int) -> void:
+	performance.reset(index)
 	selected_expression = index
 	_refresh_all()
 
@@ -607,22 +748,29 @@ func _create_expression() -> void:
 	expression.name = name_edit.text.strip_edges().left(40)
 	document.data.expressions.append(expression)
 	selected_expression = document.data.expressions.size() - 1
+	performance.reset(selected_expression)
 	_refresh_all()
 
 func _choose_slot(slot: String) -> void:
+	if importing: return
+	import_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
 	selected_slot = slot
 	import_as_layer = false
-	import_dialog.popup_centered_ratio(0.65)
+	import_dialog.popup_file_dialog()
 
 func _add_layer_dialog() -> void:
+	if importing: return
+	import_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILES
 	selected_slot = "new_layer"
 	import_as_layer = true
-	import_dialog.popup_centered_ratio(0.65)
+	import_dialog.popup_file_dialog()
 
 func _replace_layer_dialog() -> void:
+	if importing: return
+	import_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
 	selected_slot = "replace_layer"
 	import_as_layer = true
-	import_dialog.popup_centered_ratio(0.65)
+	import_dialog.popup_file_dialog()
 
 func _import_selected(path: String) -> void:
 	if importing:
@@ -670,6 +818,7 @@ func _import_selected(path: String) -> void:
 			selected_layer = document.data.layers.size() - 1
 	else:
 		document.data.expressions[target_expression][target_slot] = id
+	_remember_folder("artwork", path.get_base_dir())
 	status.text = "Imported " + path.get_file() + " · artwork is included when you save."
 	_refresh_all()
 
@@ -689,7 +838,7 @@ func _delete_layer() -> void:
 	var id: String = document.data.layers[selected_layer].id
 	for layer in document.data.layers:
 		if layer.parent == id:
-			layer.parent = ""
+			Rig.reparent(document.data.layers, layer, "")
 	document.data.layers.remove_at(selected_layer)
 	selected_layer -= 1
 	_refresh_all()
@@ -710,12 +859,14 @@ func _undo() -> void:
 	if importing:
 		return
 	if document.undo():
+		_restart_shortcuts()
 		_refresh_all()
 
 func _redo() -> void:
 	if importing:
 		return
 	if document.redo():
+		_restart_shortcuts()
 		_refresh_all()
 
 func _save_project() -> void:
@@ -729,13 +880,13 @@ func _save_project() -> void:
 
 func _save_as() -> void:
 	save_dialog.current_file = str(document.data.name).validate_filename() + ".puppet"
-	save_dialog.popup_centered_ratio(0.65)
+	save_dialog.popup_file_dialog()
 
 func _save_to(path: String) -> void:
 	if importing:
 		status.text = "Wait for artwork import to finish before saving."
 		return
-	if not path.ends_with(".puppet"):
+	if path.get_extension().to_lower() != "puppet":
 		path += ".puppet"
 	var old_name: String = document.data.name
 	document.data.name = path.get_file().get_basename()
@@ -745,6 +896,7 @@ func _save_to(path: String) -> void:
 		_message(error)
 	else:
 		current_path = path
+		_remember_folder("projects", path.get_base_dir())
 		status.text = "Saved portable avatar · " + path
 
 func _request_load(path: String) -> void:
@@ -770,10 +922,18 @@ func _load_project(path: String) -> void:
 	if not error.is_empty():
 		_message(error)
 		return
-	current_path = path if not path.begins_with("user://") else ""
+	_remember_folder("projects", path.get_base_dir())
+	current_path = path if not path.begins_with("user://") and not path.begins_with("res://") else ""
 	selected_expression = 0
+	performance.reset()
+	avatar.costume = -1
+	avatar.clips_playing = false
+	avatar.clips_preview = false
+	avatar.clip_time = 0.0
 	selected_layer = -1
 	avatar.reset_motion()
+	avatar.layer_toggles.clear()
+	_restart_shortcuts()
 	test_talking = false
 	talk_button.button_pressed = false
 	Engine.max_fps = clampi(int(document.data.fps), 30, 60)
@@ -820,6 +980,7 @@ func _start_calibration() -> void:
 func _process(delta: float) -> void:
 	if mic == null or avatar == null:
 		return
+	avatar.expression = performance.update(delta, document.data.expressions.size())
 	mic.detector.threshold_db = float(document.data.threshold)
 	mic.detector.hold_seconds = float(document.data.hold)
 	var gate := not ptt_enabled or global_ptt or (get_window().has_focus() and Input.is_physical_key_pressed(KEY_SPACE))
@@ -924,34 +1085,64 @@ func _set_base_value(value: float, key: String) -> void:
 	_set_project(key, value)
 
 func _canvas_input(event: InputEvent) -> void:
+	if importing: return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		if selected_layer >= 0 and document.data.layers[selected_layer].get("locked", false):
-			return
-		dragging_art = event.pressed
-		if dragging_art:
+		if event.pressed:
+			var art_point: Vector2 = (event.position - preview_texture.position) * 512.0 / preview_texture.size.x
+			if canvas_tool == 0:
+				var hit := _pick_layer(art_point)
+				if hit >= 0 and hit != selected_layer:
+					selected_layer = hit
+					layers_list.select(hit + 1)
+					_refresh_inspector()
+			if selected_layer >= 0 and document.data.layers[selected_layer].get("locked", false): return
 			document.checkpoint()
+			dragging_art = true
 		else:
+			dragging_art = false
 			_refresh_inspector()
 	if event is InputEventMouseMotion and dragging_art and preview_texture.size.x > 0:
 		var movement: Vector2 = event.relative * 512.0 / preview_texture.size.x
 		if selected_layer >= 0:
-			var transform: Transform2D = avatar.root_transform
-			var parent: String = document.data.layers[selected_layer].parent
-			if avatar.poses.has(parent):
-				transform *= avatar.poses[parent]
-			movement = transform.basis_xform_inv(movement)
-			document.data.layers[selected_layer].x += movement.x
-			document.data.layers[selected_layer].y += movement.y
+			var layer: Dictionary = document.data.layers[selected_layer]
+			var parent_transform: Transform2D = avatar.root_transform * Rig.rest_transform(document.data.layers, layer.parent)
+			match canvas_tool:
+				0:
+					movement = parent_transform.basis_xform_inv(movement)
+					layer.x += movement.x
+					layer.y += movement.y
+				1:
+					var world: Transform2D = parent_transform * Rig.local_transform(layer)
+					Rig.move_pivot(layer, world.basis_xform_inv(movement))
+				2: layer.rotation = clampf(float(layer.rotation) + event.relative.x * 0.5, -360, 360)
+				3: layer.scale = clampf(float(layer.scale) * exp(event.relative.x * 0.005), 0.05, 4)
 		else:
 			document.data.base_x = float(document.data.get("base_x", 0)) + movement.x
 			document.data.base_y = float(document.data.get("base_y", 0)) + movement.y
+
+func _pick_layer(point: Vector2) -> int:
+	for index in range(document.data.layers.size() - 1, -1, -1):
+		var layer: Dictionary = document.data.layers[index]
+		if not avatar.solver.visible.get(layer.id, false): continue
+		var texture: Texture2D = document.texture(layer.image)
+		if texture == null: continue
+		var transform: Transform2D = avatar.root_transform * avatar.poses.get(layer.id, Transform2D.IDENTITY)
+		var local := transform.affine_inverse() * point
+		var extent := texture.get_size() / Vector2(maxi(1, int(layer.frames)), maxi(1, int(layer.get("rows", 1))))
+		var origin := -extent * 0.5 - Vector2(float(layer.get("pivot_x", 0)), float(layer.get("pivot_y", 0)))
+		if Rect2(origin, extent).has_point(local): return index
+	return -1
 
 func _duplicate_layer() -> void:
 	if selected_layer < 0 or document.data.layers.size() >= 64:
 		return
 	document.checkpoint()
 	var layer: Dictionary = document.data.layers[selected_layer].duplicate(true)
+	var original_id: String = layer.id
 	layer.id = document.new_layer("").id
+	layer.hotkey = 0
+	for outfit in document.data.get("costumes", []):
+		if outfit.layers.has(original_id): outfit.layers[layer.id] = outfit.layers[original_id]
 	layer.name += " copy"
 	layer.x += 12
 	document.data.layers.insert(selected_layer + 1, layer)
@@ -967,6 +1158,7 @@ func _delete_expression() -> void:
 	document.checkpoint()
 	document.data.expressions.remove_at(selected_expression)
 	selected_expression = maxi(0, selected_expression - 1)
+	performance.reset(selected_expression)
 	_refresh_all()
 
 func _import_gif(path: String) -> String:
@@ -1034,19 +1226,35 @@ func _import_container(bytes: PackedByteArray) -> String:
 	document.data.animations[clip_id] = {"frames": frames, "durations": result.durations, "loop_count": result.get("loop_count", 0)}
 	return clip_id
 
+func _trigger_expression(index: int, pressed: bool, source: String) -> void:
+	if index < 0 or index >= document.data.expressions.size():
+		return
+	var state: Dictionary = document.data.expressions[index]
+	performance.activate(index, int(state.get("trigger_mode", 0)), pressed, float(state.get("reaction_seconds", 2.0)), source)
+	avatar.expression = performance.update(0, document.data.expressions.size())
+
 func _global_action(action: String, pressed: bool) -> void:
-	if action == "ptt":
+	if action == "release_all":
+		performance.release_source("global")
+	elif action.begins_with("layer:") and pressed:
+		_toggle_live_layer(action.trim_prefix("layer:"))
+	elif action.begins_with("costume:") and pressed:
+		_cycle_costume(action.trim_prefix("costume:").to_int())
+	elif action == "ptt":
 		global_ptt = pressed
+	elif action.begins_with("expression:"):
+		_trigger_expression(action.trim_prefix("expression:").to_int(), pressed, "global")
 	elif pressed:
-		if action.begins_with("expression:"):
-			var index := action.trim_prefix("expression:").to_int()
-			if index >= 0 and index < document.data.expressions.size():
-				_select_expression(index)
-		elif action == "mute":
+		if action == "mute":
 			avatar_muted = not avatar_muted
 			_refresh_inspector()
 		elif action == "blink":
 			avatar.force_blink()
+
+func _input(event: InputEvent) -> void:
+	# Releases must arrive even when a focused UI control consumes key presses.
+	if event is InputEventKey and not event.pressed and event.keycode >= KEY_1 and event.keycode <= KEY_9:
+		_trigger_expression(event.keycode - KEY_1, false, "keyboard")
 
 func _resize_preview() -> void:
 	if not is_instance_valid(preview_area) or not is_instance_valid(preview_texture):
@@ -1067,15 +1275,27 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed or event.echo:
 		return
 	if event.ctrl_pressed:
-		if event.keycode == KEY_S:
+		if event.keycode == KEY_D:
+			_duplicate_layer()
+		elif event.keycode == KEY_S:
 			_save_project()
 		elif event.keycode == KEY_Z:
 			_redo() if event.shift_pressed else _undo()
 		return
+	if event.keycode in [KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN] and selected_layer >= 0:
+		var layer: Dictionary = document.data.layers[selected_layer]
+		if layer.get("locked", false): return
+		document.checkpoint()
+		var step := 10.0 if event.shift_pressed else 1.0
+		layer.x += step * (int(event.keycode == KEY_RIGHT) - int(event.keycode == KEY_LEFT))
+		layer.y += step * (int(event.keycode == KEY_DOWN) - int(event.keycode == KEY_UP))
+		_refresh_inspector()
 	if event.keycode >= KEY_1 and event.keycode <= KEY_9:
 		var index: int = event.keycode - KEY_1
 		if index < document.data.expressions.size():
-			_select_expression(index)
+			_trigger_expression(index, true, "keyboard")
+	if event.keycode >= KEY_F1 and event.keycode <= KEY_F9:
+		_cycle_costume(event.keycode - KEY_F1)
 	if event.keycode == KEY_B:
 		avatar.force_blink()
 
@@ -1087,9 +1307,11 @@ func _show_obs_help() -> void:
 	_message("1. Start output in Puppet Studio.\n2. In OBS, try Game Capture → Capture specific window.\n3. Select ‘Puppet Studio — Avatar Output’ and enable Allow Transparency.\n4. If that does not work, use Window Capture and select a green/magenta output background, then add a Color Key filter in OBS.\n\nKeep the output window running. Capture alpha varies by system and has not yet been certified in this alpha.")
 
 func _show_help() -> void:
-	_message("PUPPET STUDIO · 0.2.0 ALPHA\n\nReplace expression artwork or add accessory layers. Select a layer, then drag the canvas or use its numeric properties. Sprite sheets use Sheet columns / rows and Animation fps. GIF, APNG and animated WebP can be imported directly.\n\nFocused: 1–9 expressions · B blink · Ctrl+S save · Ctrl+Z undo\nOptional background hotkeys: Ctrl+Alt+1–9 expressions, Ctrl+Alt+M avatar mute, Ctrl+Alt+B blink, Ctrl+Alt+Space PTT. Fixed bindings; conflict detection is not implemented.\n\nThe .puppet file includes your artwork. Autosave runs every 30 seconds while editing. Right-click the live output to restore the editor.\n\nEarly alpha: keyframe editing, costumes, appendage rigs, clipping, and verified OBS compatibility are still in development.")
+	_message("PUPPET STUDIO · 0.3.0 ALPHA\n\nReplace expression artwork or add accessory layers. Select a layer, then drag the canvas or use its numeric properties. Sprite sheets use Sheet columns / rows and Animation fps. GIF, APNG and animated WebP can be imported directly.\n\nFocused: 1–9 expressions · B blink · Ctrl+S save · Ctrl+Z undo\nOptional background hotkeys: Ctrl+Alt+1–9 expressions, Ctrl+Alt+M avatar mute, Ctrl+Alt+B blink, Ctrl+Alt+Space PTT. Costume and sprite background keys can be changed or disabled in their inspectors; duplicate app bindings are detected.\n\nThe .puppet file includes your artwork. Autosave runs every 30 seconds while editing. Right-click the live output to restore the editor.\n\nPerform tab: hold/toggle/timed expressions, costumes, and motion clips. Canvas: Move, Pivot, Rotate, Scale; Rest pose pauses procedural motion. Output tab: capture size and optional local WebSocket controls.\n\nStill in development: advanced deformable rigs, cross-platform packages, and verified OBS compatibility.")
 
 func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and performance != null:
+		performance.release_source("keyboard")
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		if is_instance_valid(output_window):
 			var confirmation := ConfirmationDialog.new()
@@ -1139,4 +1361,357 @@ func _make_sample() -> void:
 	document.data.name = "Mochi · sample avatar"
 	document.dirty = false
 
+
+
+func _apply_render_settings() -> void:
+	var size_px := int(document.data.get("output_size", 512))
+	render_target.size = Vector2i(size_px, size_px)
+	avatar.scale = Vector2.ONE * size_px / 512.0
+	avatar.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST if document.data.get("pixel_art", false) else CanvasItem.TEXTURE_FILTER_LINEAR
+
+func _build_performance_inspector() -> void:
+	_section(inspector, "Expression triggers")
+	inspector.add_child(_label(document.data.expressions[selected_expression].name, 14))
+	var mode := OptionButton.new()
+	for caption in ["Select on press", "Hold while pressed", "Toggle with neutral", "Timed reaction"]:
+		mode.add_item(caption)
+	mode.select(int(document.data.expressions[selected_expression].get("trigger_mode", 0)))
+	mode.item_selected.connect(func(i):
+		document.checkpoint()
+		document.data.expressions[selected_expression].trigger_mode = i
+		performance.reset(selected_expression)
+	)
+	inspector.add_child(mode)
+	_number(inspector, "Reaction seconds", float(document.data.expressions[selected_expression].get("reaction_seconds", 2.0)), 0.1, 60, 0.1, func(v):
+		document.checkpoint()
+		document.data.expressions[selected_expression].reaction_seconds = v
+	)
+	var trigger := Button.new()
+	trigger.text = "Test expression trigger"
+	trigger.button_down.connect(func(): _trigger_expression(selected_expression, true, "button"))
+	trigger.button_up.connect(func(): _trigger_expression(selected_expression, false, "button"))
+	inspector.add_child(trigger)
+	inspector.add_child(_label("Keys 1–9 · toggle returns to expression 1", 11))
+	_section(inspector, "Costumes")
+	inspector.add_child(_label("F1–F9 · press again for default", 11))
+	var picker := OptionButton.new()
+	picker.add_item("Default layer visibility")
+	for outfit in document.data.get("costumes", []):
+		picker.add_item(outfit.name)
+	picker.select(avatar.costume + 1 if avatar.costume < document.data.get("costumes", []).size() else 0)
+	picker.item_selected.connect(func(i):
+		avatar.costume = i - 1
+		avatar.layer_toggles.clear()
+		_refresh_inspector()
+	)
+	inspector.add_child(picker)
+	inspector.add_child(_button("New costume from visible layers", _capture_costume))
+	if avatar.costume >= 0 and avatar.costume < document.data.get("costumes", []).size():
+		var outfit: Dictionary = document.data.costumes[avatar.costume]
+		_build_hotkey_control(outfit, 112 + avatar.costume if avatar.costume < 9 else 0)
+		var title := LineEdit.new()
+		title.text = outfit.name
+		title.text_submitted.connect(func(v):
+			if not v.strip_edges().is_empty():
+				document.checkpoint()
+				outfit.name = v.strip_edges().left(40)
+				_refresh_inspector()
+		)
+		inspector.add_child(title)
+		for layer in document.data.layers:
+			var visible_layer := CheckBox.new()
+			visible_layer.text = layer.name
+			visible_layer.button_pressed = outfit.layers.get(layer.id, layer.visible)
+			visible_layer.toggled.connect(func(v):
+				document.checkpoint()
+				outfit.layers[layer.id] = v
+			)
+			inspector.add_child(visible_layer)
+		inspector.add_child(_button("Delete costume", func():
+			document.checkpoint()
+			document.data.costumes.remove_at(avatar.costume)
+			avatar.costume = -1
+			_refresh_inspector()
+		))
+	_section(inspector, "Motion clips")
+	var transport := HBoxContainer.new()
+	transport.add_child(_button("Pause" if avatar.clips_playing else "Play clips", func():
+		avatar.clips_playing = not avatar.clips_playing
+		avatar.clips_preview = true
+		_refresh_inspector()
+	))
+	transport.add_child(_button("Stop", func():
+		avatar.clips_playing = false
+		avatar.clips_preview = false
+		avatar.clip_time = 0.0
+		_refresh_inspector()
+	))
+	inspector.add_child(transport)
+	if selected_layer < 0:
+		inspector.add_child(_label("Select an accessory layer to edit its clip.", 11))
+		return
+	var layer: Dictionary = document.data.layers[selected_layer]
+	inspector.add_child(_label(layer.name, 14))
+	var clip: Dictionary = layer.get("clip", {"duration": 2.0, "loop": true, "enabled": true, "keys": []})
+	_number(inspector, "Duration (s)", float(clip.duration), 0.1, 60, 0.1, func(v):
+		for key in clip["keys"]:
+			if float(key.time) > v:
+				_message("Remove later keyframes before shortening the clip.")
+				_refresh_inspector()
+				return
+		document.checkpoint()
+		layer.clip = clip
+		clip.duration = v
+		key_time = minf(key_time, v)
+		_refresh_inspector()
+	)
+	for entry in [["Enabled", "enabled"], ["Loop clip", "loop"]]:
+		var box := CheckBox.new()
+		box.text = entry[0]
+		box.button_pressed = clip[entry[1]]
+		box.toggled.connect(func(v):
+			document.checkpoint()
+			layer.clip = clip
+			clip[entry[1]] = v
+		)
+		inspector.add_child(box)
+	_number(inspector, "Playhead / key time", minf(key_time, float(clip.duration)), 0, float(clip.duration), 0.01, func(v):
+		key_time = v
+		avatar.clip_time = v
+		avatar.clips_playing = false
+		avatar.clips_preview = true
+	)
+	var easing := OptionButton.new()
+	for caption in ["Linear transition", "Smooth transition", "Hold until next key"]:
+		easing.add_item(caption)
+	easing.select(key_ease)
+	easing.item_selected.connect(func(i): key_ease = i)
+	inspector.add_child(easing)
+	for entry in [["Key X", "x", -512, 512, 1], ["Key Y", "y", -512, 512, 1], ["Key rotation", "rotation", -360, 360, 1], ["Key scale", "scale", 0.05, 4, 0.05], ["Key opacity", "opacity", 0, 1, 0.05]]:
+		_number(inspector, entry[0], float(layer[entry[1]]), entry[2], entry[3], entry[4], func(v):
+			_set_layer(entry[1], v)
+			avatar.clips_preview = false
+			avatar.clips_playing = false
+		)
+	inspector.add_child(_button("Record / replace key at playhead", func():
+		if clip["keys"].size() >= 128:
+			_message("This clip supports up to 128 keys.")
+			return
+		document.checkpoint()
+		layer.clip = clip
+		MotionClip.capture(layer, minf(key_time, float(clip.duration)), key_ease)
+		_refresh_inspector()
+	))
+	for key in clip["keys"]:
+		var row := HBoxContainer.new()
+		row.add_child(_button("%.2f s  ·  %s" % [key.time, ["Linear", "Smooth", "Hold"][int(key.ease)]], func():
+			key_time = float(key.time)
+			key_ease = int(key.ease)
+			document.checkpoint()
+			for channel in MotionClip.CHANNELS:
+				layer[channel] = key[channel]
+			avatar.clip_time = key_time
+			avatar.clips_playing = false
+			avatar.clips_preview = true
+			_refresh_inspector()
+		))
+		row.add_child(_button("×", func():
+			document.checkpoint()
+			clip["keys"].erase(key)
+			_refresh_inspector()
+		))
+		inspector.add_child(row)
+
+func _capture_costume() -> void:
+	if document.data.get("costumes", []).size() >= 32:
+		_message("Use no more than 32 costumes.")
+		return
+	document.checkpoint()
+	if not document.data.has("costumes"):
+		document.data.costumes = []
+	var visibility: Dictionary = {}
+	for layer in document.data.layers:
+		var outfits: Array = document.data.get("costumes", [])
+		visibility[layer.id] = outfits[avatar.costume].layers.get(layer.id, layer.visible) if avatar.costume >= 0 and avatar.costume < outfits.size() else layer.visible
+	document.data.costumes.append({"name": "Costume " + str(document.data.costumes.size() + 1), "layers": visibility})
+	avatar.costume = document.data.costumes.size() - 1
+	_refresh_inspector()
+
+func _cycle_costume(index: int) -> void:
+	if index < 0 or index >= document.data.get("costumes", []).size():
+		return
+	avatar.costume = -1 if avatar.costume == index else index
+	avatar.layer_toggles.clear()
+	_refresh_inspector()
+
+func _validate_remote_command(payload: Dictionary) -> String:
+	if payload.action == "expression" and int(payload.index) >= document.data.expressions.size():
+		return "Expression does not exist"
+	if payload.action == "costume" and int(payload.index) >= document.data.get("costumes", []).size():
+		return "Costume does not exist"
+	return ""
+
+func _remote_command(payload: Dictionary) -> void:
+	match payload.action:
+		"expression": performance.reset(int(payload.index))
+		"costume":
+			avatar.costume = int(payload.index)
+			avatar.layer_toggles.clear()
+		"mute": avatar_muted = payload.enabled
+		"blink": avatar.force_blink()
+		"clips":
+			avatar.clips_playing = payload.enabled
+			avatar.clips_preview = payload.enabled
+			if payload.enabled:
+				avatar.clip_time = 0.0
+		"reset":
+			avatar.layer_toggles.clear()
+			performance.reset()
+			avatar.costume = -1
+			avatar_muted = false
+			avatar.clips_playing = false
+			avatar.clips_preview = false
+	# Refresh only on a command, never each render frame.
+	_refresh_inspector()
+
+func _reparent_layer(parent: String) -> void:
+	if selected_layer < 0: return
+	var layer: Dictionary = document.data.layers[selected_layer]
+	if not document.can_parent(layer.id, parent): return
+	document.checkpoint()
+	var previous: Dictionary = document.data.duplicate(true)
+	Rig.reparent(document.data.layers, layer, parent)
+	var error: String = document.validate(document.data)
+	if not error.is_empty():
+		document.data = previous
+		_message(error)
+	avatar.reset_motion()
+	_refresh_all()
+
+func _import_many(paths: PackedStringArray) -> void:
+	if importing: return
+	for path in paths:
+		import_as_layer = true
+		selected_slot = "new_layer"
+		await _import_selected(path)
+
+func _remember_folder(kind: String, folder: String) -> void:
+	if folder.begins_with("user://") or folder.begins_with("res://"): return
+	var config := ConfigFile.new()
+	config.load("user://workspace.cfg")
+	config.set_value("folders", kind, folder)
+	config.save("user://workspace.cfg")
+
+func _new_layered_character() -> void:
+	if importing: return
+	var confirmation := ConfirmationDialog.new()
+	confirmation.title = "New layered character"
+	confirmation.dialog_text = "Start a blank character? Save your current avatar first if you want to keep it."
+	confirmation.confirmed.connect(func():
+		document.fresh()
+		document.data.expressions.append({"name": "Neutral", "idle": "", "talk": "", "blink": "", "talk_blink": ""})
+		performance.reset()
+		avatar.costume = -1
+		avatar.clips_playing = false
+		avatar.clips_preview = false
+		avatar.reset_motion()
+		selected_layer = -1
+		selected_expression = 0
+		current_path = ""
+		document.dirty = true
+		_refresh_all()
+		status.text = "New character · Add body, head, eyes and mouth images. Attach parts with the Parent control."
+		confirmation.queue_free()
+	)
+	confirmation.canceled.connect(confirmation.queue_free)
+	add_child(confirmation)
+	confirmation.popup_centered(Vector2i(460, 160))
+
+func _toggle_live_layer(id: String) -> void:
+	avatar.layer_toggles[id] = not bool(avatar.solver.visible.get(id, false))
+	status.text = "Layer visibility toggled for this session. Costume switching resets live toggles."
+
+func _build_hotkey_control(owner: Dictionary, default_key: int) -> void:
+	inspector.add_child(_label("Background shortcut (Windows)", 11))
+	var row := HBoxContainer.new()
+	var modifiers := OptionButton.new()
+	for caption in ["None", "Ctrl", "Alt", "Ctrl+Alt", "Shift", "Ctrl+Shift", "Alt+Shift", "Ctrl+Alt+Shift"]:
+		modifiers.add_item(caption)
+	modifiers.select(int(owner.get("hotkey_mods", 3)))
+	row.add_child(modifiers)
+	var keys := OptionButton.new()
+	keys.add_item("Disabled", 0)
+	for vk in range(48, 58): keys.add_item(String.chr(vk), vk)
+	for vk in range(65, 91): keys.add_item(String.chr(vk), vk)
+	for vk in range(112, 124): keys.add_item("F" + str(vk - 111), vk)
+	keys.add_item("Space", 32)
+	keys.select(maxi(0, keys.get_item_index(int(owner.get("hotkey", default_key)))))
+	keys.item_selected.connect(func(i):
+		document.checkpoint()
+		owner.hotkey = keys.get_item_id(i)
+		_restart_shortcuts()
+	)
+	modifiers.item_selected.connect(func(i):
+		document.checkpoint()
+		owner.hotkey_mods = i
+		_restart_shortcuts()
+	)
+	row.add_child(keys)
+	inspector.add_child(row)
+
+func _shortcut_configuration() -> Dictionary:
+	var entries: Array = []
+	for index in range(mini(9, document.data.expressions.size())):
+		entries.append(["expression:" + str(index), 49 + index, 3])
+	entries.append_array([["mute", 77, 3], ["blink", 66, 3], ["ptt", 32, 3]])
+	for index in range(document.data.get("costumes", []).size()):
+		var outfit: Dictionary = document.data.costumes[index]
+		entries.append(["costume:" + str(index), int(outfit.get("hotkey", 112 + index if index < 9 else 0)), int(outfit.get("hotkey_mods", 3))])
+	for layer in document.data.layers:
+		entries.append(["layer:" + layer.id, int(layer.get("hotkey", 0)), int(layer.get("hotkey_mods", 3))])
+	var seen: Dictionary = {}
+	var text := ""
+	for entry in entries:
+		if entry[1] == 0: continue
+		var chord := str(entry[1]) + ":" + str(entry[2])
+		if seen.has(chord):
+			return {"error": "Shortcut conflict between " + str(seen[chord]) + " and " + str(entry[0]) + ". Change or disable one binding."}
+		seen[chord] = entry[0]
+		text += "%s,%d,%d;" % entry
+	return {"configuration": text}
+
+func _start_shortcuts() -> String:
+	var bindings := _shortcut_configuration()
+	if bindings.has("error"): return bindings.error
+	return global_input.start(bindings.configuration)
+
+func _restart_shortcuts() -> void:
+	var bindings := _shortcut_configuration()
+	if bindings.has("error"):
+		global_input.stop()
+		_message(bindings.error)
+	elif global_input.active and global_input.configuration != bindings.configuration:
+		var error: String = global_input.start(bindings.configuration)
+		if not error.is_empty(): _message(error)
+
+
+func _export_artwork(folder: String) -> void:
+	var target := folder.path_join(str(document.data.name).validate_filename() + "-artwork-" + str(Time.get_unix_time_from_system()).replace(".", "-"))
+	if DirAccess.make_dir_recursive_absolute(target) != OK:
+		_message("Could not create the artwork folder.")
+		return
+	for id in document.data.assets:
+		var file := FileAccess.open(target.path_join(id + ".png"), FileAccess.WRITE)
+		if file == null:
+			_message("Could not write artwork. Check free space and folder permissions.")
+			return
+		file.store_buffer(Marshalls.base64_to_raw(document.data.assets[id]))
+		file.close()
+	var manifest := FileAccess.open(target.path_join("artwork-map.json"), FileAccess.WRITE)
+	if manifest == null:
+		_message("Artwork images were exported, but the artwork map could not be written.")
+		return
+	manifest.store_string(JSON.stringify({"expressions": document.data.expressions, "layers": document.data.layers, "animations": document.data.get("animations", {})}, "  "))
+	manifest.close()
+	status.text = "Exported original embedded PNG artwork and animation map to " + target
 

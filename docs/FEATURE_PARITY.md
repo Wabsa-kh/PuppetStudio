@@ -1,30 +1,18 @@
-# Reference feature ledger
+# Reference feature ledger — 0.3 alpha
 
-Reviewed 21 September 2026. This tracks product work; it does not claim full parity.
+References: [veadotube mini](https://veado.tube/docs/usage/mini/), [PNGTuber Plus](https://kaiakairos.itch.io/pngtuber-plus), [Remix manual](https://github.com/MudkipWorld/PNGTuber-Remix/blob/1.4.x/OnlineDoc/README.md). A source-level Plus comparison is in PNGTUBER_PLUS_AUDIT.md.
 
-Primary reference pages:
-- [veadotube mini usage](https://veado.tube/docs/usage/mini/)
-- [PNGTuber Plus features](https://kaiakairos.itch.io/pngtuber-plus)
-- [PNGTuber Remix manual](https://github.com/MudkipWorld/PNGTuber-Remix/blob/1.4.x/OnlineDoc/README.md)
-
-| Feature family | Current implementation | Remaining replacement work |
+| Area | Implemented | Remaining |
 |---|---|---|
-| Image switching and independent blinking | Four slots per expression; fallback images | More configurable eye/mouth poses |
-| Multiple expressions | Add/select/duplicate/rename/delete, 1–9 shortcuts | Reorder, temporary expression stack and costume channels |
-| Microphone response | Sample-window RMS, hysteresis, hold/release, calibration UI | Real-device calibration, reconnect, permission matrix |
-| Animated art | GIF on Windows, APNG and animated WebP frame composition; grid sheets, frame durations, loop/one-shot | Broader decoder conformance and fuzzing, restart controls, independent animation tracks |
-| Sprite layers | Add/delete/reorder/duplicate; transforms; drag; numeric pivots; canvas lock; mirroring | Multi-select, pivot handles, grouping, clipping and blend modes |
-| Attachment motion | Full position/rotation/scale inheritance; translation/rotation springs; any valid parent order | Rope/appendage rigs, selective inheritance and artist presets |
-| Procedural motion | X/Y sine motion, rotation sway, speech bounce, pointer-follow range | Per-state presets, squash/stretch and clip blending |
-| Conditional appearance | Talk/silent/blink/open-eye visibility | Expression/costume-specific layer overrides |
-| Portable sharing | Embedded-artwork project, backup and local recovery | Migration adapters and production large-file handling |
-| Global controls | Optional fixed Windows helper and authenticated local channel | Rebinding, conflicts, real foreground-game testing, macOS/Linux |
-| Capture | Shared alpha render target and clean native window | Actual OBS certification, native output alternatives if necessary |
-| Professional workspace | Native charcoal editor, resizable panels, inspector tabs | Complete workflow/accessibility polish and novice testing |
-| Motion/keyframes | Not implemented | Compact animation-clip editor |
+| Expressions | Four images, independent blink/talk, hold/toggle/timed states | General transition graph, MIDI/gamepad/mouse bindings |
+| Layered character creation | Blank character, batch native import, parent rig, pivots and tools, original example | Multiselect, PSD, deformable mesh/appendage rig |
+| Motion | Axis sine, springs, inertia rotation/limits, squash/stretch, bounce, pointer follow | Artist-tested presets, selective inheritance, rope dynamics |
+| Visuals | Static/animated art, grid sheets, single-level alpha clipping, four blend modes | Normal-map lighting, shaders, nested masks |
+| Costumes | Independent named visibility channel, configurable shortcuts | Artwork/transform costume overrides |
+| Animation editor | Keyframe list, playhead, record/replace/delete, easing, loop/one-shot | Curve editor and multitrack timeline |
+| Files | Portable save/load, embedded artwork, backups, export art, native OS dialog | Other apps' formats, robust migration and extreme-asset handling |
+| Capture | Shared alpha, clean window, 256–2048 output, nearest/linear, topmost | OBS certification, click-through, alternative capture transports |
+| Controls | Windows helper, configurable costume/sprite keys, internal conflicts, authenticated local API | External key conflicts, existing Stream Deck protocols, other OS helpers |
+| Release quality | Windows alpha and automated evidence | Live mic/OBS/game testing, cross-platform packages, soak/performance/signing |
 
-Remix-specific requirements now in the backlog: asset toggles/cycles, clipping, appendages, normal-map lighting, PSD import, mesh deformation, throwables, and WebSocket control. Experimental features will be labelled separately from stable capabilities. The current Remix license restricts commercial reuse, so no Remix source code or art has been copied into this project.
-
-Animated-container implementation references: [W3C PNG specification](https://www.w3.org/TR/png-3/) and [WebP RIFF specification](https://developers.google.com/speed/webp/docs/riff_container). The parser/compositor code is original; native pixel decompression uses Godot. Extended color-profile handling and exhaustive malformed-file testing remain unfinished.
-
-The reference apps inform feature requirements. Their branding, interface assets and implementation are not copied.
+Code and sample artwork are original. Remix code/assets were not reused. Broad feature parity remains an active development target, not a property of this alpha.
