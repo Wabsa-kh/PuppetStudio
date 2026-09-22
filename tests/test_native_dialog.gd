@@ -5,6 +5,7 @@ func _initialize() -> void:
 
 func run() -> void:
 	var app = load("res://main.tscn").instantiate()
+	app.session_path = 'user://automated-test-recovery.puppet'
 	root.add_child(app)
 	await process_frame
 	app.recovery_dialog.hide()

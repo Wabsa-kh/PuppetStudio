@@ -21,6 +21,7 @@ func _initialize() -> void:
 
 func run() -> void:
 	app = load("res://main.tscn").instantiate()
+	app.session_path = 'user://automated-test-recovery.puppet'
 	root.add_child(app)
 	await process_frame
 	app.recovery_dialog.hide()
@@ -73,7 +74,9 @@ func run() -> void:
 	check(not app.global_ptt, "Global hold releases")
 	var bridge_error: String = app.global_input.start()
 	check(bridge_error.is_empty(), "Windows input helper starts")
-	await create_timer(1.5).timeout
+	var heartbeat_deadline := Time.get_ticks_msec() + 35000
+	while app.global_input.active and not app.global_input.received_heartbeat and Time.get_ticks_msec() < heartbeat_deadline:
+		await create_timer(0.1).timeout
 	print("BRIDGE_OBSERVATION: active=%s heartbeat=%s age=%.2f" % [app.global_input.active, app.global_input.received_heartbeat, app.global_input.heartbeat_age])
 	check(app.global_input.active and app.global_input.received_heartbeat, "Authenticated input helper heartbeat received")
 	app.global_input.stop()

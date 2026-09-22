@@ -1,3 +1,11 @@
+# Current status — 0.4.1 alpha
+
+The redesigned Windows editor has save/quit/recovery hardening, a diagnostic window, checked staged builds and a repeated-use test. See [VALIDATION.md](VALIDATION.md) for test evidence and [LAUNCH_READINESS.md](LAUNCH_READINESS.md) for release blockers.
+
+# 0.4 UI update
+
+The editor now uses conventional menus, contextual pages, visual artwork slots and dedicated windows. See [UI_REDESIGN.md](UI_REDESIGN.md) for the current feature map. The following earlier implementation inventory remains applicable to the underlying features.
+
 # Implementation status — 0.3.0 alpha
 
 The current build adds a usable layered character/rigging workflow, native file selection, independent costumes and expression reactions, motion-key editing and local control. It is not a complete replacement release.

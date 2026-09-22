@@ -1,5 +1,10 @@
 extends Control
 
+const EditorShell = preload("res://ui/editor_shell.gd")
+var shell
+var appearance_scheme := 0
+var appearance_accent := "a8bf91"
+
 const Document = preload("res://core/document.gd")
 const Microphone = preload("res://core/microphone.gd")
 const Avatar = preload("res://runtime/avatar.gd")
@@ -76,12 +81,15 @@ var last_dirty := false
 var autosave_pending := false
 var recovery_dialog: ConfirmationDialog
 var session_path := "user://recovery.puppet"
+var pending_quit := false
 var shot_path := ""
 var view_tabs: OptionButton
 var left_panel: Control
 var right_panel: Control
 
 func _ready() -> void:
+	if OS.get_cmdline_user_args().has("--self-test"):
+		session_path = "user://automated-test-recovery.puppet"
 	Engine.max_fps = 60
 	get_window().min_size = Vector2i(1080, 680)
 	get_tree().auto_accept_quit = false
@@ -128,8 +136,12 @@ func _ready() -> void:
 		recovery_dialog.popup_centered(Vector2i(440, 170))
 
 func _build_theme() -> void:
+	var preferences := ConfigFile.new()
+	preferences.load("user://workspace.cfg")
+	appearance_scheme = int(preferences.get_value("appearance", "scheme", 0))
+	appearance_accent = str(preferences.get_value("appearance", "accent", "a8bf91"))
 	var skin := Theme.new()
-	skin.default_font_size = 14
+	skin.default_font_size = int(preferences.get_value("appearance", "font_size", 14))
 	skin.set_color("font_color", "Label", Color("d5d8de"))
 	skin.set_color("font_color", "Button", Color("e0e2e7"))
 	skin.set_color("font_hover_color", "Button", Color.WHITE)
@@ -156,8 +168,9 @@ func _build_theme() -> void:
 
 func _box(fill: String, border: String, width: int = 1) -> StyleBoxFlat:
 	var box := StyleBoxFlat.new()
-	box.bg_color = Color(fill)
-	box.border_color = Color(border)
+	var palette := {"25282e": "181c22", "22252b": "12161b", "30343b": "242c36", "1c1f24": "10141a"}
+	box.bg_color = Color(palette.get(fill, fill) if appearance_scheme == 1 else fill)
+	box.border_color = Color(appearance_accent if border in ["b6c68e", "7d8a69", "8f9e76"] else border)
 	box.set_border_width_all(width)
 	box.set_corner_radius_all(3)
 	box.content_margin_left = 9
@@ -196,167 +209,9 @@ func _panel(width: float = 0) -> PanelContainer:
 	return panel
 
 func _build_ui() -> void:
-	var background := ColorRect.new()
-	background.color = Color("1c1f24")
-	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(background)
-	var margin := MarginContainer.new()
-	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	for edge in ["left", "right", "top", "bottom"]:
-		margin.add_theme_constant_override("margin_" + edge, 8)
-	add_child(margin)
-	var root := VBoxContainer.new()
-	margin.add_child(root)
-	var menubar := HBoxContainer.new()
-	root.add_child(menubar)
-	menubar.add_child(_label("PUPPET STUDIO", 13, "e3e5db"))
-	menubar.add_child(_label(" /  0.3 ALPHA", 11, "7f8794"))
-	menubar.add_child(VSeparator.new())
-	menubar.add_child(_button("Open…", func(): load_dialog.popup_file_dialog()))
-	menubar.add_child(_button("Rig example", func(): _request_load("res://samples/Rigged-Mochi.puppet")))
-	menubar.add_child(_button("Export art…", func(): export_art_dialog.popup_file_dialog()))
-	menubar.add_child(_button("Save", _save_project, "Ctrl+S • Portable project with embedded artwork"))
-	menubar.add_child(_button("Save as…", _save_as))
-	menubar.add_child(_button("Undo", _undo, "Ctrl+Z"))
-	menubar.add_child(_button("Redo", _redo, "Ctrl+Shift+Z"))
-	_spacer(menubar)
-	menubar.add_child(_button("OBS setup", _show_obs_help))
-	menubar.add_child(_button("Help", _show_help))
-	var toolbar := HBoxContainer.new()
-	root.add_child(toolbar)
-	title_label = _label("Untitled avatar", 16)
-	toolbar.add_child(title_label)
-	_spacer(toolbar)
-	view_tabs = OptionButton.new()
-	for mode in ["Studio workspace", "Quick setup", "Perform / clean preview"]:
-		view_tabs.add_item(mode)
-	view_tabs.item_selected.connect(_change_workspace)
-	toolbar.add_child(view_tabs)
-	output_button = _button("Start output", _toggle_output, "Open a separate, clean capture window")
-	output_button.add_theme_stylebox_override("normal", _box("667653", "8f9e76"))
-	toolbar.add_child(output_button)
-	var split := HSplitContainer.new()
-	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	root.add_child(split)
-	left_panel = _panel(210)
-	split.add_child(left_panel)
-	var left := VBoxContainer.new()
-	left_panel.add_child(left)
-	left.add_child(_label("LAYERS", 11, "a1a8b4"))
-	left.add_child(_label("Base artwork + accessories", 12, "878f9d"))
-	layers_list = ItemList.new()
-	layers_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	layers_list.custom_minimum_size.y = 180
-	layers_list.item_selected.connect(_select_layer)
-	left.add_child(layers_list)
-	var layer_actions := HBoxContainer.new()
-	left.add_child(layer_actions)
-	layer_actions.add_child(_button("+ Image", _add_layer_dialog))
-	layer_actions.add_child(_button("−", _delete_layer, "Delete selected accessory"))
-	layer_actions.add_child(_button("↑", func(): _move_layer(-1), "Move down in draw order"))
-	layer_actions.add_child(_button("↓", func(): _move_layer(1), "Move up in draw order"))
-	left.add_child(_button("New layered character", _new_layered_character))
-	left.add_child(_button("Duplicate selected layer", _duplicate_layer, "Copy artwork and properties; editable with Undo"))
-	_section(left, "Expression artwork")
-	for slot in ["idle", "talk", "blink", "talk_blink"]:
-		var caption: String = {"idle": "Idle / eyes open", "talk": "Talking / eyes open", "blink": "Idle / eyes closed", "talk_blink": "Talking / eyes closed"}[slot]
-		left.add_child(_button(caption + "…", _choose_slot.bind(slot), "Replace this image in the selected expression"))
-	var drop_help := _label("Drop PNG / WebP onto the\nwindow to add an accessory.", 11, "929aa7")
-	left.add_child(drop_help)
-	var second := HSplitContainer.new()
-	second.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	split.add_child(second)
-	var center := VBoxContainer.new()
-	center.custom_minimum_size.x = 400
-	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	second.add_child(center)
-	var canvas_tools := HBoxContainer.new()
-	center.add_child(canvas_tools)
-	canvas_tools.add_child(_label("AVATAR CANVAS", 11, "939da9"))
-	var tools := OptionButton.new()
-	for caption in ["Move", "Pivot", "Rotate", "Scale"]:
-		tools.add_item(caption)
-	tools.item_selected.connect(func(i): canvas_tool = i)
-	canvas_tools.add_child(tools)
-	var guides := CheckBox.new()
-	guides.text = "Rig"
-	guides.button_pressed = rig_visible
-	guides.toggled.connect(func(v): rig_visible = v)
-	canvas_tools.add_child(guides)
-	var freeze := CheckBox.new()
-	freeze.text = "Rest pose"
-	freeze.toggled.connect(func(v):
-		avatar.motion_enabled = not v
-		if v:
-			avatar.clips_playing = false
-			avatar.clips_preview = false
-		avatar.reset_motion()
-	)
-	canvas_tools.add_child(freeze)
-	_spacer(canvas_tools)
-	canvas_tools.add_child(_button("−", func(): _set_zoom(zoom - 0.15)))
-	canvas_tools.add_child(_button("Fit", func(): _set_zoom(1.0)))
-	canvas_tools.add_child(_button("+", func(): _set_zoom(zoom + 0.15)))
-	preview_area = Control.new()
-	preview_area.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	preview_area.clip_contents = true
-	preview_area.gui_input.connect(_canvas_input)
-	center.add_child(preview_area)
-	var checker := Checker.new()
-	checker.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	preview_area.add_child(checker)
-	preview_texture = TextureRect.new()
-	preview_texture.texture = render_target.get_texture()
-	preview_texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	preview_texture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	preview_texture.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	preview_area.add_child(preview_texture)
-	rig_overlay = RigOverlay.new()
-	rig_overlay.app = self
-	rig_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	rig_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	preview_area.add_child(rig_overlay)
-	preview_area.resized.connect(_resize_preview)
-	var tests := HBoxContainer.new()
-	center.add_child(tests)
-	talk_button = _button("Test talking", _toggle_test, "Preview mouth response without a microphone")
-	talk_button.toggle_mode = true
-	tests.add_child(talk_button)
-	tests.add_child(_button("Blink", func(): avatar.force_blink()))
-	_spacer(tests)
-	tests.add_child(_label("Clean capture output  •  alpha", 11, "88919e"))
-	var expression_panel := _panel()
-	center.add_child(expression_panel)
-	var expressions_box := VBoxContainer.new()
-	expression_panel.add_child(expressions_box)
-	expressions_box.add_child(_label("EXPRESSIONS", 11, "a1a8b4"))
-	var expr_scroll := ScrollContainer.new()
-	expr_scroll.custom_minimum_size.y = 42
-	expressions_box.add_child(expr_scroll)
-	expression_bar = HBoxContainer.new()
-	expr_scroll.add_child(expression_bar)
-	right_panel = _panel(278)
-	second.add_child(right_panel)
-	var right_column := VBoxContainer.new()
-	right_panel.add_child(right_column)
-	inspector_tabs = TabBar.new()
-	for tab in ["Edit", "Audio", "Output", "Perform"]:
-		inspector_tabs.add_tab(tab)
-	inspector_tabs.tab_changed.connect(func(index):
-		inspector_tab = index
-		_refresh_inspector()
-	)
-	right_column.add_child(inspector_tabs)
-	var scroll := ScrollContainer.new()
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	right_column.add_child(scroll)
-	inspector = VBoxContainer.new()
-	inspector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	inspector.custom_minimum_size.x = 250
-	scroll.add_child(inspector)
-	status = _label("Ready. Import your artwork or try the sample character.", 12, "a4adba")
-	root.add_child(status)
+	shell = EditorShell.new()
+	add_child(shell)
+	shell.setup(self)
 
 func _build_dialogs() -> void:
 	export_art_dialog = FileDialog.new()
@@ -382,6 +237,7 @@ func _build_dialogs() -> void:
 	save_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
 	save_dialog.filters = PackedStringArray(["*.puppet ; Puppet Studio avatar"])
 	save_dialog.file_selected.connect(_save_to)
+	save_dialog.canceled.connect(func(): pending_quit = false)
 	add_child(save_dialog)
 	load_dialog = FileDialog.new()
 	load_dialog.use_native_dialog = true
@@ -451,6 +307,7 @@ func _refresh_all() -> void:
 	expression_bar.add_child(_button("+", _new_expression, "Duplicate the selected expression"))
 	_refresh_inspector()
 	_resize_preview()
+	if shell != null: shell.refresh()
 
 func _refresh_inspector() -> void:
 	updating = true
@@ -473,6 +330,14 @@ func _refresh_inspector() -> void:
 		)
 		inspector.add_child(expression_name)
 		inspector.add_child(_button("Delete this expression", _delete_expression))
+		var restart := CheckBox.new()
+		restart.text = "Restart animation on expression change"
+		restart.button_pressed = document.data.expressions[selected_expression].get("restart", false)
+		restart.toggled.connect(func(v):
+			document.checkpoint()
+			document.data.expressions[selected_expression].restart = v
+		)
+		inspector.add_child(restart)
 		for entry in [["X offset", "base_x", -512, 512, 1], ["Y offset", "base_y", -512, 512, 1], ["Scale", "base_scale", 0.1, 3, 0.05], ["Rotation", "base_rotation", -180, 180, 1]]:
 			_number(inspector, entry[0], float(document.data.get(entry[1], 1.0 if entry[1] == "base_scale" else 0.0)), entry[2], entry[3], entry[4], _set_base_value.bind(entry[1]))
 		_number(inspector, "Motion strength", float(document.data.motion), 0, 2, 0.05, func(v): _set_project("motion", v))
@@ -613,6 +478,7 @@ func _refresh_inspector() -> void:
 	for index in range(inspector.get_child_count()):
 		var group := 0 if index < property_count else (1 if index < audio_end else (2 if index < output_end else 3))
 		inspector.get_child(index).visible = group == inspector_tab
+	if shell != null: shell.route_inspector(property_count, audio_end, output_end)
 	updating = false
 
 func _build_layer_inspector() -> void:
@@ -636,7 +502,7 @@ func _build_layer_inspector() -> void:
 		control.button_pressed = layer.get(toggle[1], toggle[1] in ["loop", "spring_position", "spring_rotation"])
 		control.toggled.connect(_set_layer.bind(toggle[1]))
 		inspector.add_child(control)
-	for entry in [["X offset", "x", -512, 512, 1], ["Y offset", "y", -512, 512, 1], ["Scale", "scale", 0.05, 4, 0.05], ["Width scale", "scale_x", 0.05, 4, 0.05], ["Height scale", "scale_y", 0.05, 4, 0.05], ["Rotation", "rotation", -180, 180, 1], ["Pivot X", "pivot_x", -2048, 2048, 1], ["Pivot Y", "pivot_y", -2048, 2048, 1], ["Opacity", "opacity", 0, 1, 0.05], ["Sway X", "sway", 0, 60, 1], ["Float Y", "float_y", 0, 60, 1], ["Sway speed X", "sway_speed", 0, 12, 0.1], ["Sway speed Y", "sway_speed_y", 0, 12, 0.1], ["Rotation min", "rotation_min", -360, 360, 1], ["Rotation max", "rotation_max", -360, 360, 1], ["Rotation drag", "rotation_drag", -4, 4, 0.1], ["Squash / stretch", "stretch", 0, 2, 0.05], ["Rotation sway", "rotation_sway", 0, 45, 1], ["Bounce", "bounce", 0, 60, 1], ["Spring frequency", "spring_frequency", 0.5, 12, 0.1], ["Spring damping", "damping", 0.1, 2, 0.05], ["Pointer follow range", "pointer_range", 0, 80, 1], ["Sheet columns", "frames", 1, 64, 1], ["Sheet rows", "rows", 1, 64, 1], ["Animation fps", "fps", 0, 30, 1]]:
+	for entry in [["X offset", "x", -512, 512, 1], ["Y offset", "y", -512, 512, 1], ["Scale", "scale", 0.05, 4, 0.05], ["Width scale", "scale_x", 0.05, 4, 0.05], ["Height scale", "scale_y", 0.05, 4, 0.05], ["Rotation", "rotation", -180, 180, 1], ["Pivot X", "pivot_x", -2048, 2048, 1], ["Pivot Y", "pivot_y", -2048, 2048, 1], ["Opacity", "opacity", 0, 1, 0.05], ["Sway X", "sway", 0, 60, 1], ["Float Y", "float_y", 0, 60, 1], ["Sway speed X", "sway_speed", 0, 12, 0.1], ["Sway speed Y", "sway_speed_y", 0, 12, 0.1], ["Wave phase", "phase", -6.28, 6.28, 0.05], ["Rotation min", "rotation_min", -360, 360, 1], ["Rotation max", "rotation_max", -360, 360, 1], ["Rotation drag", "rotation_drag", -4, 4, 0.1], ["Squash / stretch", "stretch", 0, 2, 0.05], ["Rotation sway", "rotation_sway", 0, 45, 1], ["Bounce", "bounce", 0, 60, 1], ["Spring frequency", "spring_frequency", 0.5, 12, 0.1], ["Spring damping", "damping", 0.1, 2, 0.05], ["Pointer follow range", "pointer_range", 0, 80, 1], ["Sheet columns", "frames", 1, 64, 1], ["Sheet rows", "rows", 1, 64, 1], ["Animation fps", "fps", 0, 30, 1]]:
 		if not layer.has(entry[1]):
 			layer[entry[1]] = document.new_layer("").get(entry[1], layer.get("sway_speed", 2.1) if entry[1] == "sway_speed_y" else 0.0)
 		_number(inspector, entry[0], float(layer[entry[1]]), entry[2], entry[3], entry[4], _set_layer.bind(entry[1]), true)
@@ -818,6 +684,8 @@ func _import_selected(path: String) -> void:
 			selected_layer = document.data.layers.size() - 1
 	else:
 		document.data.expressions[target_expression][target_slot] = id
+	if not document.data.has("asset_names"): document.data.asset_names = {}
+	document.data.asset_names[id] = path.get_file()
 	_remember_folder("artwork", path.get_base_dir())
 	status.text = "Imported " + path.get_file() + " · artwork is included when you save."
 	_refresh_all()
@@ -893,11 +761,21 @@ func _save_to(path: String) -> void:
 	var error: String = document.save_to(path)
 	if not error.is_empty():
 		document.data.name = old_name
+		pending_quit = false
 		_message(error)
 	else:
 		current_path = path
+		_clear_recovery()
 		_remember_folder("projects", path.get_base_dir())
 		status.text = "Saved portable avatar · " + path
+		if pending_quit:
+			pending_quit = false
+			get_tree().quit()
+
+func _clear_recovery() -> void:
+	for suffix in ["", ".bak", ".tmp"]:
+		if FileAccess.file_exists(session_path + suffix):
+			DirAccess.remove_absolute(session_path + suffix)
 
 func _request_load(path: String) -> void:
 	if importing:
@@ -922,6 +800,10 @@ func _load_project(path: String) -> void:
 	if not error.is_empty():
 		_message(error)
 		return
+	if path == session_path:
+		document.dirty = true
+	else:
+		_clear_recovery()
 	_remember_folder("projects", path.get_base_dir())
 	current_path = path if not path.begins_with("user://") and not path.begins_with("res://") else ""
 	selected_expression = 0
@@ -1264,6 +1146,7 @@ func _resize_preview() -> void:
 	preview_texture.position = (preview_area.size - preview_texture.size) * 0.5
 
 func _change_workspace(index: int) -> void:
+	view_tabs.select(index)
 	left_panel.visible = index != 2
 	right_panel.visible = index != 2
 	if index == 1:
@@ -1300,6 +1183,15 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		avatar.force_blink()
 
 func _message(text: String) -> void:
+	if shell != null and is_instance_valid(shell.asset_window) and shell.asset_window.visible:
+		var asset_notice := AcceptDialog.new()
+		asset_notice.title = "Puppet Studio"
+		asset_notice.dialog_text = text
+		shell.asset_window.add_child(asset_notice)
+		asset_notice.confirmed.connect(asset_notice.queue_free)
+		asset_notice.canceled.connect(asset_notice.queue_free)
+		asset_notice.popup_centered(Vector2i(510, 220))
+		return
 	notice.dialog_text = text
 	notice.popup_centered(Vector2i(510, 220))
 
@@ -1307,7 +1199,7 @@ func _show_obs_help() -> void:
 	_message("1. Start output in Puppet Studio.\n2. In OBS, try Game Capture → Capture specific window.\n3. Select ‘Puppet Studio — Avatar Output’ and enable Allow Transparency.\n4. If that does not work, use Window Capture and select a green/magenta output background, then add a Color Key filter in OBS.\n\nKeep the output window running. Capture alpha varies by system and has not yet been certified in this alpha.")
 
 func _show_help() -> void:
-	_message("PUPPET STUDIO · 0.3.0 ALPHA\n\nReplace expression artwork or add accessory layers. Select a layer, then drag the canvas or use its numeric properties. Sprite sheets use Sheet columns / rows and Animation fps. GIF, APNG and animated WebP can be imported directly.\n\nFocused: 1–9 expressions · B blink · Ctrl+S save · Ctrl+Z undo\nOptional background hotkeys: Ctrl+Alt+1–9 expressions, Ctrl+Alt+M avatar mute, Ctrl+Alt+B blink, Ctrl+Alt+Space PTT. Costume and sprite background keys can be changed or disabled in their inspectors; duplicate app bindings are detected.\n\nThe .puppet file includes your artwork. Autosave runs every 30 seconds while editing. Right-click the live output to restore the editor.\n\nPerform tab: hold/toggle/timed expressions, costumes, and motion clips. Canvas: Move, Pivot, Rotate, Scale; Rest pose pauses procedural motion. Output tab: capture size and optional local WebSocket controls.\n\nStill in development: advanced deformable rigs, cross-platform packages, and verified OBS compatibility.")
+	_message("PUPPET STUDIO · 0.4.1 ALPHA\n\nReplace expression artwork or add accessory layers. Select a layer, then drag the canvas or use its numeric properties. Sprite sheets use Sheet columns / rows and Animation fps. GIF, APNG and animated WebP can be imported directly.\n\nFocused: 1–9 expressions · B blink · Ctrl+S save · Ctrl+Z undo\nOptional background hotkeys: Ctrl+Alt+1–9 expressions, Ctrl+Alt+M avatar mute, Ctrl+Alt+B blink, Ctrl+Alt+Space PTT. Costume and sprite background keys can be changed or disabled in their inspectors; duplicate app bindings are detected.\n\nThe .puppet file includes your artwork. Autosave runs every 30 seconds while editing. Right-click the live output to restore the editor.\n\nPerform tab: hold/toggle/timed expressions, costumes, and motion clips. Canvas: Move, Pivot, Rotate, Scale; Rest pose pauses procedural motion. Output tab: capture size and optional local WebSocket controls.\n\nStill in development: advanced deformable rigs, cross-platform packages, and verified OBS compatibility.")
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and performance != null:
@@ -1333,9 +1225,30 @@ func _quit_app() -> void:
 	if importing:
 		status.text = "Artwork is still importing. Please close again when it finishes."
 		return
-	if document.dirty:
-		document.save_to(session_path)
-	get_tree().quit()
+	if not document.dirty:
+		get_tree().quit()
+		return
+	var confirmation := ConfirmationDialog.new()
+	confirmation.name = "QuitConfirmation"
+	confirmation.title = "Save your changes?"
+	confirmation.dialog_text = "This character has unsaved changes. Save them before closing?"
+	confirmation.ok_button_text = "Save and quit"
+	confirmation.cancel_button_text = "Keep editing"
+	confirmation.add_button("Discard changes", true, "discard")
+	confirmation.confirmed.connect(func():
+		confirmation.hide()
+		confirmation.queue_free()
+		pending_quit = true
+		_save_project()
+	)
+	confirmation.canceled.connect(confirmation.queue_free)
+	confirmation.custom_action.connect(func(action):
+		if action == "discard":
+			_clear_recovery()
+			get_tree().quit()
+	)
+	add_child(confirmation)
+	confirmation.popup_centered(Vector2i(470, 170))
 
 func _capture_preview() -> void:
 	await RenderingServer.frame_post_draw
@@ -1602,7 +1515,7 @@ func _remember_folder(kind: String, folder: String) -> void:
 	config.set_value("folders", kind, folder)
 	config.save("user://workspace.cfg")
 
-func _new_layered_character() -> void:
+func _legacy_new_layered_character() -> void:
 	if importing: return
 	var confirmation := ConfirmationDialog.new()
 	confirmation.title = "New layered character"
@@ -1715,3 +1628,7 @@ func _export_artwork(folder: String) -> void:
 	manifest.close()
 	status.text = "Exported original embedded PNG artwork and animation map to " + target
 
+
+func _new_layered_character() -> void:
+	shell.wizard_mode = 1
+	shell.open_wizard()

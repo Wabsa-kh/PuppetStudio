@@ -37,6 +37,7 @@ func connect_peer(port: int) -> WebSocketPeer:
 
 func run() -> void:
 	var app = load("res://main.tscn").instantiate()
+	app.session_path = 'user://automated-test-recovery.puppet'
 	root.add_child(app)
 	await process_frame
 	app.recovery_dialog.hide()
@@ -134,10 +135,10 @@ func run() -> void:
 	child.clip_children = false
 	var shortcut_error: String = app._start_shortcuts()
 	check(shortcut_error.is_empty(), "Custom shortcut configuration starts Windows helper")
-	for attempt in range(80):
-		if app.global_input.received_heartbeat: break
+	for attempt in range(350):
+		if app.global_input.received_heartbeat or not app.global_input.active: break
 		await create_timer(0.1).timeout
-	check(app.global_input.received_heartbeat, "Custom shortcut helper configuration remains healthy")
+	check(app.global_input.active and app.global_input.received_heartbeat, "Custom shortcut helper configuration remains healthy")
 	app.global_input.stop()
 	# Use an available non-default test port; production server is opt-in.
 	var error := ""

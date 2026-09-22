@@ -26,10 +26,10 @@ func run(app: Control, screenshot: String = "") -> void:
 	check(app.avatar.talking and app.avatar.blinking, "Exported mouth and eyes run independently")
 	var error: String = app.global_input.start()
 	check(error.is_empty(), "Packaged background input helper starts")
-	for attempt in range(80):
-		if app.global_input.received_heartbeat: break
+	for attempt in range(350):
+		if app.global_input.received_heartbeat or not app.global_input.active: break
 		await get_tree().create_timer(0.1).timeout
-	check(app.global_input.received_heartbeat, "Packaged input helper heartbeat arrives")
+	check(app.global_input.active and app.global_input.received_heartbeat, "Packaged input helper heartbeat arrives")
 	app.global_input.stop()
 	app._toggle_output()
 	await get_tree().process_frame
@@ -69,10 +69,10 @@ func run(app: Control, screenshot: String = "") -> void:
 	app._cycle_costume(0)
 	var shortcut_error: String = app._start_shortcuts()
 	check(shortcut_error.is_empty(), "Packaged helper accepts configured bindings")
-	for attempt in range(80):
-		if app.global_input.received_heartbeat: break
+	for attempt in range(350):
+		if app.global_input.received_heartbeat or not app.global_input.active: break
 		await get_tree().create_timer(0.1).timeout
-	check(app.global_input.received_heartbeat, "Configured helper reports healthy heartbeat")
+	check(app.global_input.active and app.global_input.received_heartbeat, "Configured helper reports healthy heartbeat")
 	app.global_input.stop()
 	app.document.dirty = false
 	app.status.text = "Layered rig example · Select a part, move its pivot, or try talking and blinking."

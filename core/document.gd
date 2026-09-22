@@ -118,6 +118,12 @@ func validate(candidate: Variant) -> String:
 			return "The project is missing " + key + "."
 	if not candidate.get("assets") is Dictionary or not candidate.get("name") is String:
 		return "Invalid project metadata."
+	if candidate.has("workflow") and candidate.workflow not in ["simple", "layered", "advanced"]:
+		return "Invalid character workflow."
+	if not candidate.get("asset_names", {}) is Dictionary:
+		return "Invalid artwork names."
+	for asset_name in candidate.get("asset_names", {}).values():
+		if not asset_name is String: return "Invalid artwork name."
 	if not candidate.get("animations", {}) is Dictionary:
 		return "Invalid animation data."
 	for clip in candidate.get("animations", {}).values():
@@ -254,15 +260,22 @@ func save_to(path: String) -> String:
 	var error := validate(data)
 	if not error.is_empty(): return error
 	var payload := JSON.stringify(data)
-	if payload.length() > MAX_FILE_BYTES:
+	var encoded := payload.to_utf8_buffer()
+	if encoded.size() > MAX_FILE_BYTES:
 		return "This alpha limits a project to 48 MB. Use smaller artwork."
 	var temp_path := path + ".tmp"
 	var file := FileAccess.open(temp_path, FileAccess.WRITE)
 	if file == null:
 		return "Cannot write to this folder. Choose another location."
-	file.store_string(payload)
+	file.store_buffer(encoded)
 	file.flush()
+	var write_error := file.get_error()
 	file.close()
+	var verification := FileAccess.open(temp_path, FileAccess.READ)
+	if write_error != OK or verification == null or verification.get_length() != encoded.size():
+		if verification != null: verification.close()
+		return "The save could not be written completely. Your previous project was kept. Choose a folder with enough free space and try again."
+	verification.close()
 	if FileAccess.file_exists(path):
 		var backup_error := DirAccess.copy_absolute(path, path + ".bak")
 		if backup_error != OK:

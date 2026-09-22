@@ -1,3 +1,7 @@
+# 0.4 UI update
+
+The editor now uses conventional menus, contextual pages, visual artwork slots and dedicated windows. See [UI_REDESIGN.md](UI_REDESIGN.md) for the current feature map. The following earlier implementation inventory remains applicable to the underlying features.
+
 # Reference feature ledger — 0.3 alpha
 
 References: [veadotube mini](https://veado.tube/docs/usage/mini/), [PNGTuber Plus](https://kaiakairos.itch.io/pngtuber-plus), [Remix manual](https://github.com/MudkipWorld/PNGTuber-Remix/blob/1.4.x/OnlineDoc/README.md). A source-level Plus comparison is in PNGTUBER_PLUS_AUDIT.md.

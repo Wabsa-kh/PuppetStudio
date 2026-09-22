@@ -65,6 +65,7 @@ func run() -> void:
 	pose = Motion.layers_for_pose([layer], {}, 1.0, false)
 	check(pose[0].x == 77, "Stopping clips restores editable pose")
 	var scene = load("res://main.tscn").instantiate()
+	scene.session_path = 'user://automated-test-recovery.puppet'
 	root.add_child(scene)
 	await process_frame
 	scene.recovery_dialog.hide()

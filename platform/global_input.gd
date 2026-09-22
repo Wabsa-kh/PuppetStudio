@@ -8,8 +8,10 @@ var configuration := ""
 var active := false
 var heartbeat_age := 0.0
 var received_heartbeat := false
+var last_error := ""
 
 func start(bindings := "") -> String:
+	last_error = ""
 	if OS.get_name() != "Windows":
 		return "Global input is currently implemented for Windows only."
 	stop()
@@ -55,7 +57,11 @@ func _process(delta: float) -> void:
 		received_heartbeat = true
 		if message[1] != "heartbeat":
 			action_received.emit(message[1], message[2] == "1")
-	if heartbeat_age > (2.0 if received_heartbeat else 10.0):
+	if process_id > 0 and not OS.is_process_running(process_id):
+		last_error = "The shortcut helper stopped. Enable background shortcuts to reconnect."
+		stop()
+	elif heartbeat_age > (2.0 if received_heartbeat else 30.0):
+		last_error = "The shortcut helper did not respond. Enable background shortcuts to retry."
 		stop()
 
 func _exit_tree() -> void:
