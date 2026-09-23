@@ -1,4 +1,4 @@
-# Launch readiness — 0.5.0 alpha
+# Launch readiness — 0.5.1 alpha
 
 This is a Windows testing build, not a production-ready cross-platform replacement. The redesigned editor and existing avatar features work in automated tests. The following gates define what remains before broader release.
 
@@ -45,7 +45,7 @@ Do not describe a short automated lifecycle run as a multi-hour stability test. 
 
 See PNGTUBER_PLUS_AUDIT.md and FEATURE_PARITY.md for the earlier comparison. Launch a clearly scoped, useful product before claiming every competitor feature is supported.
 
-The implementation milestones are tracked in [FEATURE_ROADMAP.md](FEATURE_ROADMAP.md). The advanced roadmap includes appendage/rope physics, deformable meshes, normal-map lighting, throwables, PSD import, expanded input support and richer protocol compatibility. These are not present in 0.5.0.
+The implementation milestones are tracked in [FEATURE_ROADMAP.md](FEATURE_ROADMAP.md). The roadmap includes appendage and rope physics, deformable meshes, normal-map lighting, throwables, PSD import, expanded input support and richer protocol compatibility. These are not present in 0.5.1.
 
 ## Suggested next release sequence
 

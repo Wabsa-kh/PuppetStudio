@@ -1,4 +1,4 @@
-# Feature parity — 0.5.0 alpha
+# Feature parity — 0.5.1 alpha
 
 The editor now uses conventional menus, contextual pages, visual artwork slots and dedicated windows. See [UI_REDESIGN.md](UI_REDESIGN.md) for the current feature map. The following earlier implementation inventory remains applicable to the underlying features.
 

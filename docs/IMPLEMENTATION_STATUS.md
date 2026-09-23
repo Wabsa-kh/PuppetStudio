@@ -1,4 +1,4 @@
-# Current status — 0.5.0 alpha
+# Current status — 0.5.1 alpha
 
 The redesigned Windows editor has save/quit/recovery hardening, a diagnostic window, checked staged builds and a repeated-use test. See [VALIDATION.md](VALIDATION.md) for test evidence and [LAUNCH_READINESS.md](LAUNCH_READINESS.md) for release blockers.
 

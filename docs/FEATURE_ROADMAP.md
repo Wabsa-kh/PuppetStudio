@@ -1,6 +1,6 @@
-# Feature roadmap after 0.5.0 alpha
+# Feature roadmap after 0.5.1 alpha
 
-Puppet Studio 0.5.0 is a useful simple/layered PNGTuber application. It does not yet contain every experimental feature from PNGTuber Remix or every input/backend supported by veadotube. The remaining work is grouped so each milestone can ship with usable UI and validation.
+Puppet Studio 0.5.1 supports quick and layered PNGTuber characters. The remaining work is grouped into releases that can each ship with a complete workflow and useful test coverage.
 
 ## 0.6 — authoring productivity
 

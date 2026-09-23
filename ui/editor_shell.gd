@@ -132,12 +132,12 @@ func setup(owner_app) -> void:
 	app.title_label = app._label("Untitled", 16)
 	app.title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bar.add_child(app.title_label)
-	mode_label = app._label("SIMPLE CHARACTER", 11, "a6b79b")
+	mode_label = app._label("Quick character", 11, "a6b79b")
 	bar.add_child(mode_label)
 	bar.add_child(button("Audio", func(): open_tool("Audio"), "audio", "Microphone, calibration and background shortcuts"))
 	bar.add_child(button("Capture", func(): open_tool("Output"), "settings", "Output resolution, transparency and frame rate"))
 	app.view_tabs = OptionButton.new()
-	for text in ["Edit workspace", "Artwork workspace", "Live performance"]: app.view_tabs.add_item(text)
+	for text in ["Rig", "Artwork", "Perform"]: app.view_tabs.add_item(text)
 	app.view_tabs.item_selected.connect(app._change_workspace)
 	bar.add_child(app.view_tabs)
 	app.output_button = button("Start output", app._toggle_output, "output", "Open the clean avatar window for capture")
@@ -152,7 +152,7 @@ func setup(owner_app) -> void:
 	parts_panel = VBoxContainer.new()
 	left.add_child(parts_panel)
 	parts_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	parts_panel.add_child(app._label("CHARACTER PARTS", 11, "9daab7"))
+	parts_panel.add_child(app._label("Character parts", 12, "aeb6c0"))
 	app.layers_list = ItemList.new()
 	app.layers_list.fixed_icon_size = Vector2i(30, 30)
 	app.layers_list.custom_minimum_size.y = 150
@@ -167,7 +167,7 @@ func setup(owner_app) -> void:
 	actions.add_child(button("↓", func(): app._move_layer(1), "", "Move selected part forward in draw order"))
 	actions.add_child(button("", func(): confirm_action("Remove part?", "Remove the selected part? Attached children keep their positions. You can undo this.", app._delete_layer), "trash", "Remove selected part"))
 	left.add_child(HSeparator.new())
-	left.add_child(app._label("PROJECT ARTWORK", 11, "9daab7"))
+	left.add_child(app._label("Project artwork", 12, "aeb6c0"))
 	left.add_child(app._label("Images used by this character", 12, "959fac"))
 	var dock_assets := ItemList.new()
 	dock_assets.name = "AssetDock"
@@ -258,7 +258,7 @@ func setup(owner_app) -> void:
 	center.add_child(expression_panel)
 	var expressions := VBoxContainer.new()
 	expression_panel.add_child(expressions)
-	expressions.add_child(app._label("EXPRESSIONS  ·  click to edit / keys 1–9 to trigger", 11, "9daab7"))
+	expressions.add_child(app._label("Expressions  ·  click to edit, keys 1–9 to trigger", 12, "aeb6c0"))
 	var expr_scroll := ScrollContainer.new()
 	expr_scroll.custom_minimum_size.y = 66
 	expressions.add_child(expr_scroll)
@@ -307,7 +307,7 @@ func build_menus(root: VBoxContainer) -> void:
 			app.avatar.clips_preview = false
 			app.avatar.clip_time = 0.0, ""]],
 		"Studio": [["Microphone and shortcuts…", func(): open_tool("Audio"), "audio"], ["Capture settings…", func(): open_tool("Output"), "output"], ["Start / stop output", app._toggle_output, "output"], ["Local control API…", func(): open_tool("Integrations"), "settings"]],
-		"View": [["Edit workspace", func(): app._change_workspace(0), ""], ["Live performance", func(): app._change_workspace(2), "output"], ["Toggle rig guides", func(): app.rig_visible = not app.rig_visible, "rig"], ["Fit canvas", func(): app._set_zoom(1), ""], ["Asset browser…", open_assets, "image"]],
+		"View": [["Rig workspace", func(): app._change_workspace(0), ""], ["Perform workspace", func(): app._change_workspace(2), "output"], ["Toggle rig guides", func(): app.rig_visible = not app.rig_visible, "rig"], ["Fit canvas", func(): app._set_zoom(1), ""], ["Asset browser…", open_assets, "image"]],
 		"Help": [["Workspace guide", show_guide, ""], ["OBS setup", app._show_obs_help, "output"], ["System status…", open_diagnostics, "settings"], ["About Puppet Studio", app._show_help, ""]],
 	}
 	for title in definitions:
@@ -323,11 +323,11 @@ func build_menus(root: VBoxContainer) -> void:
 			popup.set_item_tooltip(i, entries[i][0])
 		popup.id_pressed.connect(func(i): entries[i][1].call())
 	app._spacer(bar)
-	bar.add_child(app._label("PUPPET STUDIO  /  " + str(ProjectSettings.get_setting("application/config/version", "alpha")).trim_suffix("-alpha"), 11, "7f8d9a"))
+	bar.add_child(app._label("Puppet Studio  ·  v" + str(ProjectSettings.get_setting("application/config/version", "alpha")).replace("-alpha", " alpha"), 11, "87929e"))
 
 func refresh() -> void:
 	workflow = app.document.data.get("workflow", "simple" if app.document.data.layers.is_empty() else "layered")
-	mode_label.text = {"simple": "SIMPLE CHARACTER", "layered": "LAYERED CHARACTER", "advanced": "ADVANCED RIG"}.get(workflow, "LAYERED CHARACTER")
+	mode_label.text = {"simple": "Quick character", "layered": "Layered character", "advanced": "Animated rig"}.get(workflow, "Layered character")
 	parts_panel.visible = workflow != "simple" or not app.document.data.layers.is_empty()
 	for i in range(app.document.data.layers.size()):
 		var layer: Dictionary = app.document.data.layers[i]
@@ -400,7 +400,7 @@ func route_inspector(properties_end: int, audio_end: int, output_end: int) -> vo
 			else:
 				if label in ["X offset", "Y offset", "Scale", "Rotation"]: category = "Layout"
 				elif node is LineEdit or label == "Restart animation on expression change": category = "Expression"
-				elif label == "Delete this expression": category = "Menu action"
+				elif label == "Delete expression…": category = "Menu action"
 				elif label in ["CHARACTER", app.document.data.expressions[app.selected_expression].name]: category = "Menu action"
 				else: category = "Behavior"
 		elif i < audio_end: category = "Audio"
@@ -644,8 +644,8 @@ func open_wizard() -> void:
 	root.offset_right = -24
 	root.offset_bottom = -24
 	wizard.add_child(root)
-	root.add_child(app._label("How do you want to build your character?", 23))
-	root.add_child(app._label("Choose a starting workflow. All projects use the same portable file format.", 13, "9baab7"))
+	root.add_child(app._label("Create a character", 23))
+	root.add_child(app._label("Choose the setup that matches your artwork. You can add more parts later.", 13, "9baab7"))
 	wizard_name = LineEdit.new()
 	wizard_name.placeholder_text = "Character name"
 	wizard_name.text = "My character"
@@ -654,9 +654,9 @@ func open_wizard() -> void:
 	wizard_choices.clear()
 	var group := ButtonGroup.new()
 	var choices := [
-		["Simple image character", "Four mouth / eye states, expressions and microphone response.", "image"],
+		["Quick character", "Choose four images and start talking. Best for a first avatar.", "image"],
 		["Layered character", "Separate body, head, eyes and accessories with parent attachments.", "rig"],
-		["Advanced rig", "Layered artwork, springs, costumes and keyframed motion clips.", "motion"],
+		["Animated rig", "Layered artwork with springs, costumes and motion clips.", "motion"],
 	]
 	for i in range(choices.size()):
 		var choice := button(choices[i][0] + "\n" + choices[i][1], func(): wizard_mode = i, choices[i][2], choices[i][1])

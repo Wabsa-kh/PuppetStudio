@@ -197,7 +197,7 @@ func _button(text: String, callback: Callable, tip: String = "") -> Button:
 
 func _section(parent: VBoxContainer, text: String) -> void:
 	parent.add_child(HSeparator.new())
-	parent.add_child(_label(text.to_upper(), 11, "9bA2af"))
+	parent.add_child(_label(text, 12, "aeb6c0"))
 
 func _spacer(parent: Container) -> void:
 	var space := Control.new()
@@ -318,7 +318,7 @@ func _refresh_inspector() -> void:
 	if selected_layer >= 0:
 		_build_layer_inspector()
 	else:
-		inspector.add_child(_label("CHARACTER", 11, "a1a8b4"))
+		inspector.add_child(_label("Expression", 12, "aeb6c0"))
 		inspector.add_child(_label(str(document.data.expressions[selected_expression].name), 18))
 		var expression_name := LineEdit.new()
 		expression_name.text = document.data.expressions[selected_expression].name
@@ -330,7 +330,7 @@ func _refresh_inspector() -> void:
 				_refresh_all()
 		)
 		inspector.add_child(expression_name)
-		inspector.add_child(_button("Delete this expression", _delete_expression))
+		inspector.add_child(_button("Delete expression…", _delete_expression, "Remove this expression after confirmation"))
 		var restart := CheckBox.new()
 		restart.text = "Restart animation on expression change"
 		restart.button_pressed = document.data.expressions[selected_expression].get("restart", false)
@@ -440,7 +440,7 @@ func _refresh_inspector() -> void:
 	)
 	inspector.add_child(capture_color)
 	var fps := OptionButton.new()
-	for value in [20, 30, 60, 120]: fps.add_item(("Ultra smooth" if value == 120 else ("Smooth" if value == 60 else ("Eco" if value == 30 else "Low power"))) + " · " + str(value) + " fps", value)
+	for value in [20, 30, 60, 120]: fps.add_item(str(value) + " fps", value)
 	fps.select(maxi(0, fps.get_item_index(int(document.data.fps))))
 	fps.item_selected.connect(func(i):
 		_set_project("fps", fps.get_item_id(i))
@@ -501,7 +501,7 @@ func _refresh_inspector() -> void:
 
 func _build_layer_inspector() -> void:
 	var layer: Dictionary = document.data.layers[selected_layer]
-	inspector.add_child(_label("LAYER PROPERTIES", 11, "a1a8b4"))
+	inspector.add_child(_label("Part settings", 12, "aeb6c0"))
 	var name_field := LineEdit.new()
 	name_field.text = layer.name
 	name_field.text_submitted.connect(func(value):
@@ -1224,7 +1224,7 @@ func _show_obs_help() -> void:
 	_message("1. Start output in Puppet Studio.\n2. In OBS, try Game Capture → Capture specific window.\n3. Select ‘Puppet Studio — Avatar Output’ and enable Allow Transparency.\n4. If that does not work, use Window Capture and select a green/magenta output background, then add a Color Key filter in OBS.\n\nKeep the output window running. Capture alpha varies by system and has not yet been certified in this alpha.")
 
 func _show_help() -> void:
-	_message("PUPPET STUDIO · 0.5.0 ALPHA\n\nReplace expression artwork or add accessory layers. Select a layer, then drag the canvas or use its numeric properties. Sprite sheets use Sheet columns / rows and Animation fps. GIF, APNG and animated WebP can be imported directly.\n\nFocused: 1–9 expressions · B blink · Ctrl+S save · Ctrl+Z undo\nOptional background hotkeys: Ctrl+Alt+1–9 expressions, Ctrl+Alt+M avatar mute, Ctrl+Alt+B blink, Ctrl+Alt+Space PTT. Costume and sprite background keys can be changed or disabled in their inspectors; duplicate app bindings are detected.\n\nThe .puppet file includes your artwork. Autosave runs every 30 seconds while editing. Right-click the live output to restore the editor.\n\nPerform tab: hold/toggle/timed expressions, costumes, and motion clips. Canvas: Move, Pivot, Rotate, Scale; Rest pose pauses procedural motion. Output tab: capture size and optional local WebSocket controls.\n\nStill in development: advanced deformable rigs, cross-platform packages, and verified OBS compatibility.")
+	_message("Puppet Studio 0.5.1 alpha\n\nStart with File → New character, or open a .puppet file. Select a part to edit it; use Move, Pivot, Rotate, and Scale directly on the canvas.\n\nShortcuts\n1–9  Expressions\nF1–F9  Costumes\nB  Blink\nSpace  Push to talk\nCtrl+S  Save\nCtrl+Z / Ctrl+Shift+Z  Undo / redo\n\nSaved .puppet files include their artwork. Right-click the output window to return to the editor.\n\nSee Help → System status when microphone, capture, or background shortcuts are not behaving as expected.")
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and performance != null:
