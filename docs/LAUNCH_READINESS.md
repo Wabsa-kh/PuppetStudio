@@ -1,4 +1,4 @@
-# Launch readiness — 0.4.1 alpha
+# Launch readiness — 0.5.0 alpha
 
 This is a Windows testing build, not a production-ready cross-platform replacement. The redesigned editor and existing avatar features work in automated tests. The following gates define what remains before broader release.
 
@@ -11,6 +11,7 @@ This is a Windows testing build, not a production-ready cross-platform replaceme
 - Help → System status provides a user-copyable diagnostic report without artwork, project paths or API tokens.
 - Builds reject script errors, failed exports, timeouts and missing test-completion results. The exported app is tested in a staging folder before replacing the last build.
 - Automated tests use separate recovery files.
+- Parts support RGBA tinting; capture supports custom colors and 20/30/60/120 fps; Audio includes an explicit restart action.
 
 ## Gates before a public Windows beta
 
@@ -20,7 +21,7 @@ This is a Windows testing build, not a production-ready cross-platform replaceme
 | OBS capture | App alpha pixels pass; actual OBS unverified | Record transparent and color-key captures; verify resizing, minimize, focus changes and reopening |
 | Background input | Helper authentication and bindings pass; physical foreground-game input unverified | Trigger each binding while another application has focus; verify release/focus-loss behavior |
 | Sustained reliability | Short lifecycle test provided; multi-hour soak pending | Several hours with animated artwork, capture and mic active; track memory, CPU and recovery |
-| Performance budget | No final budget certified | Measure idle/active CPU, working-set RAM, GPU load and input latency on low-end PCs at 30/60 fps |
+| Performance budget | No final budget certified | Measure idle/active CPU, working-set RAM, GPU load and input latency on low-end PCs across 20–120 fps modes |
 | Data resilience | Save/load/recovery and failure-path tests added | Actual disk-full/read-only targets, interrupted writes, recovery after forced termination, larger malformed-image corpus |
 | Usability/accessibility | Layout inspected; no independent usability study | First-time users build a simple and layered character; test keyboard navigation, 100–200% display scaling and smaller screens |
 | Distribution | Portable ZIP available; executable unsigned | Branding metadata review, signed package if pursuing trusted Windows distribution, clean-machine antivirus/startup tests and release notes |
@@ -43,6 +44,8 @@ Do not describe a short automated lifecycle run as a multi-hour stability test. 
 5. Rendering features from the reference-app audit: normal-map lighting, throwables and other advanced effects. These are not implied by choosing Advanced in the creation window.
 
 See PNGTUBER_PLUS_AUDIT.md and FEATURE_PARITY.md for the earlier comparison. Launch a clearly scoped, useful product before claiming every competitor feature is supported.
+
+The implementation milestones are tracked in [FEATURE_ROADMAP.md](FEATURE_ROADMAP.md). The advanced roadmap includes appendage/rope physics, deformable meshes, normal-map lighting, throwables, PSD import, expanded input support and richer protocol compatibility. These are not present in 0.5.0.
 
 ## Suggested next release sequence
 

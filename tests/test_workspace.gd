@@ -34,7 +34,8 @@ func run() -> void:
 	await process_frame
 	check(app.avatar.talking, "Test-talk control reaches renderer")
 	app.avatar.force_blink()
-	await process_frame
+	app._process(1.0 / 60.0)
+	app.avatar._process(1.0 / 60.0)
 	check(app.avatar.blinking and app.avatar.talking, "Blink and speech can run together")
 	var artwork := Image.create(64, 64, false, Image.FORMAT_RGBA8)
 	artwork.fill(Color(0.9, 0.7, 0.3, 0.7))
@@ -87,6 +88,11 @@ func run() -> void:
 	check(app.output_window.transparent_bg and app.output_window.borderless, "Output requests alpha and borderless display")
 	app._set_output_background(1)
 	check(app.output_background.color == Color("00ff00"), "Color-key fallback applies")
+	app.output_custom_color = Color("29435c")
+	app._set_output_background(3)
+	check(app.output_background.color == Color("29435c"), "Custom capture background applies")
+	app.document.data.fps = 120
+	check(app.document.validate(app.document.data).is_empty(), "120 fps output setting is valid")
 	app._set_output_background(0)
 	app.mic.start("Default")
 	await create_timer(1.5).timeout

@@ -1,6 +1,8 @@
-# Puppet Studio 0.4.1-alpha
+# Puppet Studio 0.5.0-alpha
 
 A standalone Windows avatar editor and performer built with Godot. Extract the ZIP and run `PuppetStudio.exe`. No Godot installation is required. Keep both helper EXEs beside it.
+
+![Puppet Studio layered character editor](docs/images/editor.png)
 
 ## New editor layout
 
@@ -25,6 +27,7 @@ To build your own character, choose **File → New character**, select Simple, L
 - Independent width/height, X/Y sine speeds, positional/rotational spring switches, spring frequency/damping, rotation limits/drag, squash/stretch, speech bounce/gravity, ignore-bounce, opacity, mirroring and pointer-follow controls are available.
 - A parent can clip linked artwork to its alpha. Clipped descendants form a draw group. Nested masks are rejected; use a single mask level. Normal, additive, subtractive and multiply blending are available.
 - Background keyboard shortcuts can toggle individual sprites. These are live overrides; switching costumes resets them.
+- Visibility includes an RGBA tint for each part. Capture supports transparent, green, magenta or a custom background color and 20/30/60/120 fps modes.
 
 ## Expressions, costumes and motion
 
@@ -38,7 +41,7 @@ For a motion clip, select a part and choose **Animation → Motion clips**. The 
 
 ## Microphone and shortcuts
 
-Choose **Studio → Microphone and shortcuts** (or the Audio toolbar button), select your device and Enable mic. Calibration measures quiet then speech. Avatar mute only affects this app's mouth state, not your microphone in OBS. PTT gates detected speech.
+Choose **Studio → Microphone and shortcuts** (or the Audio toolbar button), select your device and Enable mic. Calibration measures quiet then speech; Restart reconnects capture after a device or operating-system change. Avatar mute only affects this app's mouth state, not your microphone in OBS. PTT gates detected speech.
 
 Focused defaults: 1–9 expression triggers, F1–F9 costumes, B blink, Space PTT, Ctrl+S save, Ctrl+Z undo, Ctrl+Shift+Z redo, Ctrl+D duplicate.
 
@@ -46,7 +49,7 @@ Optional Windows background defaults: Ctrl+Alt+1–9 expressions, Ctrl+Alt+F1–
 
 ## Capture and integrations
 
-Start output opens a clean borderless avatar window. Drag it to move; right-click to reopen the editor. Output supports transparent/green/magenta backgrounds, topmost, 30/60 fps, pixel-art filtering, and 256/512/1024/2048-square render targets. Higher resolution uses more memory/GPU time.
+Start output opens a clean borderless avatar window. Drag it to move; right-click to reopen the editor. Output supports transparent/green/magenta/custom backgrounds, topmost, 20/30/60/120 fps, pixel-art filtering, and 256/512/1024/2048-square render targets. Higher resolution and frame rates use more memory/GPU time.
 
 OBS capture is still unverified on this machine. Application alpha pixels were tested; that does not certify OBS compatibility. Try Game Capture with Allow Transparency, or a solid background with Color Key.
 

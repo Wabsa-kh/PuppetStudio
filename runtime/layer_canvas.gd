@@ -34,4 +34,5 @@ func _draw() -> void:
 	var extent := Vector2(texture.get_width() / float(columns), texture.get_height() / float(rows))
 	var source := Rect2(Vector2(frame % columns, frame / columns) * extent, extent)
 	var pivot := Vector2(float(layer.get("pivot_x", 0)), float(layer.get("pivot_y", 0)))
-	draw_texture_rect_region(texture, Rect2(-extent * 0.5 - pivot, extent), source, Color(brightness, brightness, brightness, opacity))
+	var tint := Color(str(layer.get("tint", "ffffff")))
+	draw_texture_rect_region(texture, Rect2(-extent * 0.5 - pivot, extent), source, Color(tint.r * brightness, tint.g * brightness, tint.b * brightness, tint.a * opacity))

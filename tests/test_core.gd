@@ -56,6 +56,12 @@ func _initialize() -> void:
 	invalid = restored.data.duplicate(true)
 	invalid.threshold = "not a number"
 	check(not restored.validate(invalid).is_empty(), "Malformed settings rejected")
+	invalid = restored.data.duplicate(true)
+	invalid.fps = 47
+	check(not restored.validate(invalid).is_empty(), "Unsupported output frame rate rejected")
+	invalid = restored.data.duplicate(true)
+	invalid.output_background = "not-a-color"
+	check(not restored.validate(invalid).is_empty(), "Malformed custom capture color rejected")
 	var malformed := FileAccess.open("user://broken_test.puppet", FileAccess.WRITE)
 	malformed.store_string("{broken")
 	malformed.close()
@@ -66,6 +72,8 @@ func _initialize() -> void:
 	parent.rotation = 90.0
 	parent.scale = 2.0
 	var child: Dictionary = document.new_layer("Child")
+	child.tint = "80c0ffff"
+	check(Color.html_is_valid(child.tint), "Per-part color tint uses portable HTML color data")
 	child.parent = parent.id
 	child.x = 10.0
 	var solver = PoseSolver.new()

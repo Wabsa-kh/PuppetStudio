@@ -25,8 +25,8 @@ Sources: [repository](https://github.com/kaiakairos/PNGTuber-Plus/tree/3173b2136
 | Per-sprite visibility hotkey | Configurable live visibility toggle | Resets on costume switch; external application conflicts not detected |
 | Clip linked sprites | Parent alpha mask | One mask level only; nested masks rejected |
 | Texture filtering | Smooth / nearest pixel-art mode | Available globally |
-| Background color | Transparent, green, magenta | Arbitrary color picker and blue preset still pending |
-| Frame cap | 30/60 | Arbitrary and unlimited caps not exposed |
+| Background color | Transparent, green, magenta and arbitrary custom color | Presets and custom colors available |
+| Frame cap | 20/30/60/120 | Arbitrary/unlimited values are intentionally not exposed |
 | Microphone/device/threshold/blink | Device selector, RMS gate, calibration, blink timing | Live microphone hardware not available here |
 | Save/share/extract art | Portable embedded project, backup, export art/map | Plus .save import/export pending; not file-format compatible |
 | Stream Deck support | Original authenticated local WebSocket API | Existing Plus plugin protocol not implemented |

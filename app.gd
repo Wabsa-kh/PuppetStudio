@@ -31,6 +31,7 @@ var global_ptt := false
 var dragging_art := false
 var output_topmost := false
 var output_background_index := 0
+var output_custom_color := Color("1b1e24")
 var inspector_tab := 0
 var inspector_tabs: TabBar
 var importing := false
@@ -372,6 +373,13 @@ func _refresh_inspector() -> void:
 	var mic_row := HBoxContainer.new()
 	inspector.add_child(mic_row)
 	mic_row.add_child(_button("Stop mic" if mic.active else "Enable mic", _toggle_mic))
+	mic_row.add_child(_button("Restart", func():
+		var selected := device_picker.get_item_text(device_picker.selected) if device_picker.selected >= 0 else "Default"
+		mic.stop()
+		mic.start(selected)
+		if not mic.last_error.is_empty(): _message(mic.last_error)
+		_refresh_inspector()
+	, "Restart microphone capture if the operating system changed or disconnected the device"))
 	mic_row.add_child(_button("Calibrate", _start_calibration))
 	meter = ProgressBar.new()
 	meter.min_value = -80
@@ -415,17 +423,27 @@ func _refresh_inspector() -> void:
 	var audio_end := inspector.get_child_count()
 	_section(inspector, "Output")
 	var output_mode := OptionButton.new()
-	for caption in ["Transparent background", "Green background", "Magenta background"]:
+	for caption in ["Transparent background", "Green background", "Magenta background", "Custom color"]:
 		output_mode.add_item(caption)
 	output_mode.item_selected.connect(_set_output_background)
 	output_mode.select(output_background_index)
 	inspector.add_child(output_mode)
+	var capture_color := ColorPickerButton.new()
+	capture_color.text = "Choose custom background"
+	capture_color.color = Color(str(document.data.get("output_background", output_custom_color.to_html(false))))
+	capture_color.edit_alpha = false
+	capture_color.color_changed.connect(func(color):
+		document.checkpoint()
+		output_custom_color = color
+		document.data.output_background = color.to_html(false)
+		if output_background_index == 3 and is_instance_valid(output_background): output_background.color = color
+	)
+	inspector.add_child(capture_color)
 	var fps := OptionButton.new()
-	fps.add_item("Smooth · 60 fps")
-	fps.add_item("Eco · 30 fps")
-	fps.select(1 if int(document.data.fps) == 30 else 0)
+	for value in [20, 30, 60, 120]: fps.add_item(("Ultra smooth" if value == 120 else ("Smooth" if value == 60 else ("Eco" if value == 30 else "Low power"))) + " · " + str(value) + " fps", value)
+	fps.select(maxi(0, fps.get_item_index(int(document.data.fps))))
 	fps.item_selected.connect(func(i):
-		_set_project("fps", 30 if i == 1 else 60)
+		_set_project("fps", fps.get_item_id(i))
 		Engine.max_fps = int(document.data.fps)
 	)
 	inspector.add_child(fps)
@@ -496,6 +514,12 @@ func _build_layer_inspector() -> void:
 	visibility.button_pressed = layer.visible
 	visibility.toggled.connect(func(v): _set_layer("visible", v))
 	inspector.add_child(visibility)
+	var tint := ColorPickerButton.new()
+	tint.text = "Part color tint"
+	tint.color = Color(str(layer.get("tint", "ffffff")))
+	tint.edit_alpha = true
+	tint.color_changed.connect(func(color): _set_layer("tint", color.to_html(true)))
+	inspector.add_child(tint)
 	for toggle in [["Lock canvas position", "locked"], ["Mirror horizontally", "flip_x"], ["Mirror vertically", "flip_y"], ["Spring follow-through", "spring"], ["Loop animation", "loop"], ["Position spring", "spring_position"], ["Rotation spring", "spring_rotation"], ["Ignore body bounce", "ignore_bounce"], ["Clip linked layers to this image", "clip_children"]]:
 		var control := CheckBox.new()
 		control.text = toggle[0]
@@ -818,7 +842,7 @@ func _load_project(path: String) -> void:
 	_restart_shortcuts()
 	test_talking = false
 	talk_button.button_pressed = false
-	Engine.max_fps = clampi(int(document.data.fps), 30, 60)
+	Engine.max_fps = clampi(int(document.data.fps), 20, 120)
 	status.text = "Opened " + path.get_file()
 	_refresh_all()
 
@@ -932,7 +956,8 @@ func _toggle_output() -> void:
 	output_window.close_requested.connect(_toggle_output)
 	add_child(output_window)
 	output_background = ColorRect.new()
-	output_background.color = [Color.TRANSPARENT, Color("00ff00"), Color("ff00ff")][output_background_index]
+	output_custom_color = Color(str(document.data.get("output_background", output_custom_color.to_html(false))))
+	output_background.color = [Color.TRANSPARENT, Color("00ff00"), Color("ff00ff"), output_custom_color][output_background_index]
 	output_background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	output_window.add_child(output_background)
 	var image := TextureRect.new()
@@ -957,7 +982,7 @@ func _set_output_background(index: int) -> void:
 	output_background_index = index
 	if not is_instance_valid(output_window):
 		_toggle_output()
-	output_background.color = [Color.TRANSPARENT, Color("00ff00"), Color("ff00ff")][index]
+	output_background.color = [Color.TRANSPARENT, Color("00ff00"), Color("ff00ff"), output_custom_color][index]
 
 func _set_zoom(value: float) -> void:
 	zoom = clampf(value, 0.25, 2.5)
@@ -1199,7 +1224,7 @@ func _show_obs_help() -> void:
 	_message("1. Start output in Puppet Studio.\n2. In OBS, try Game Capture → Capture specific window.\n3. Select ‘Puppet Studio — Avatar Output’ and enable Allow Transparency.\n4. If that does not work, use Window Capture and select a green/magenta output background, then add a Color Key filter in OBS.\n\nKeep the output window running. Capture alpha varies by system and has not yet been certified in this alpha.")
 
 func _show_help() -> void:
-	_message("PUPPET STUDIO · 0.4.1 ALPHA\n\nReplace expression artwork or add accessory layers. Select a layer, then drag the canvas or use its numeric properties. Sprite sheets use Sheet columns / rows and Animation fps. GIF, APNG and animated WebP can be imported directly.\n\nFocused: 1–9 expressions · B blink · Ctrl+S save · Ctrl+Z undo\nOptional background hotkeys: Ctrl+Alt+1–9 expressions, Ctrl+Alt+M avatar mute, Ctrl+Alt+B blink, Ctrl+Alt+Space PTT. Costume and sprite background keys can be changed or disabled in their inspectors; duplicate app bindings are detected.\n\nThe .puppet file includes your artwork. Autosave runs every 30 seconds while editing. Right-click the live output to restore the editor.\n\nPerform tab: hold/toggle/timed expressions, costumes, and motion clips. Canvas: Move, Pivot, Rotate, Scale; Rest pose pauses procedural motion. Output tab: capture size and optional local WebSocket controls.\n\nStill in development: advanced deformable rigs, cross-platform packages, and verified OBS compatibility.")
+	_message("PUPPET STUDIO · 0.5.0 ALPHA\n\nReplace expression artwork or add accessory layers. Select a layer, then drag the canvas or use its numeric properties. Sprite sheets use Sheet columns / rows and Animation fps. GIF, APNG and animated WebP can be imported directly.\n\nFocused: 1–9 expressions · B blink · Ctrl+S save · Ctrl+Z undo\nOptional background hotkeys: Ctrl+Alt+1–9 expressions, Ctrl+Alt+M avatar mute, Ctrl+Alt+B blink, Ctrl+Alt+Space PTT. Costume and sprite background keys can be changed or disabled in their inspectors; duplicate app bindings are detected.\n\nThe .puppet file includes your artwork. Autosave runs every 30 seconds while editing. Right-click the live output to restore the editor.\n\nPerform tab: hold/toggle/timed expressions, costumes, and motion clips. Canvas: Move, Pivot, Rotate, Scale; Rest pose pauses procedural motion. Output tab: capture size and optional local WebSocket controls.\n\nStill in development: advanced deformable rigs, cross-platform packages, and verified OBS compatibility.")
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and performance != null:

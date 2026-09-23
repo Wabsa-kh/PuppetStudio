@@ -8,7 +8,7 @@ var redo_stack: Array[Dictionary] = []
 var dirty := false
 
 func new_layer(label: String) -> Dictionary:
-	return {"id": str(Time.get_ticks_usec()) + "_" + str(randi()), "name": label, "visible": true, "scale_x": 1.0, "scale_y": 1.0, "talk_rule": 0, "blink_rule": 0, "rotation_min": -360.0, "rotation_max": 360.0, "rotation_drag": 0.0, "stretch": 0.0, "clip_children": false, "locked": false, "x": 0.0, "y": 0.0, "scale": 1.0, "rotation": 0.0, "pivot_x": 0.0, "pivot_y": 0.0, "flip_x": false, "flip_y": false, "opacity": 1.0, "condition": 0, "parent": "", "sway": 0.0, "float_y": 0.0, "sway_speed": 2.1, "rotation_sway": 0.0, "phase": 0.0, "bounce": 0.0, "lag": 0.12, "spring": false, "spring_frequency": 3.0, "damping": 0.65, "pointer_range": 0.0, "frames": 1, "rows": 1, "fps": 8.0, "loop": true, "image": ""}
+	return {"id": str(Time.get_ticks_usec()) + "_" + str(randi()), "name": label, "visible": true, "tint": "ffffff", "scale_x": 1.0, "scale_y": 1.0, "talk_rule": 0, "blink_rule": 0, "rotation_min": -360.0, "rotation_max": 360.0, "rotation_drag": 0.0, "stretch": 0.0, "clip_children": false, "locked": false, "x": 0.0, "y": 0.0, "scale": 1.0, "rotation": 0.0, "pivot_x": 0.0, "pivot_y": 0.0, "flip_x": false, "flip_y": false, "opacity": 1.0, "condition": 0, "parent": "", "sway": 0.0, "float_y": 0.0, "sway_speed": 2.1, "rotation_sway": 0.0, "phase": 0.0, "bounce": 0.0, "lag": 0.12, "spring": false, "spring_frequency": 3.0, "damping": 0.65, "pointer_range": 0.0, "frames": 1, "rows": 1, "fps": 8.0, "loop": true, "image": ""}
 
 func can_parent(child: String, parent: String) -> bool:
 	var map: Dictionary = {}
@@ -158,6 +158,8 @@ func validate(candidate: Variant) -> String:
 			return "Invalid layer blend mode."
 		if not layer.get("visible") is bool:
 			return "Invalid layer visibility."
+		if layer.has("tint") and (not layer.tint is String or not Color.html_is_valid(layer.tint)):
+			return "Invalid layer tint."
 		for key in ["pivot_x", "pivot_y", "float_y", "sway_speed", "rotation_sway", "phase", "spring_frequency", "damping", "pointer_range", "rows", "sway_speed_y", "scale_x", "scale_y", "skew", "rotation_min", "rotation_max", "rotation_drag", "stretch"]:
 			if layer.has(key) and (not (layer[key] is int or layer[key] is float) or not is_finite(float(layer[key]))):
 				return "Invalid layer setting: " + key
@@ -252,6 +254,10 @@ func validate(candidate: Variant) -> String:
 			last = float(key.time)
 	if int(candidate.get("output_size", 512)) not in [256, 512, 1024, 2048]:
 		return "Invalid output resolution."
+	if int(candidate.get("fps", 60)) not in [20, 30, 60, 120]:
+		return "Invalid output frame rate."
+	if candidate.has("output_background") and (not candidate.output_background is String or not Color.html_is_valid(candidate.output_background)):
+		return "Invalid output background color."
 	if candidate.has("pixel_art") and not candidate.pixel_art is bool:
 		return "Invalid pixel-art setting."
 	return ""

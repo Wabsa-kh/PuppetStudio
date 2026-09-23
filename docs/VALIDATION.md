@@ -1,18 +1,18 @@
-# Validation — 0.4.1 alpha
+# Validation — 0.5.0 alpha
 
 | Suite | Passing checks | Evidence |
 |---|---:|---|
-| Core | 40 | evidence/build/core.log |
+| Core | 43 | evidence/build/core.log |
 | Save safety | 11 | evidence/build/save-safety.log |
-| Workspace | 29 | evidence/build/workspace.log |
+| Workspace | 31 | evidence/build/workspace.log |
 | Advanced runtime | 36 | evidence/build/advanced.log |
-| Rig and control API | 29 | evidence/build/rig.log |
-| UI, creation, asset assignment, preferences and quit/recovery | 93 | evidence/build/editor_ui.log |
+| Rig and control API | 30 | evidence/build/rig.log |
+| UI, creation, asset assignment, preferences and quit/recovery | 94 | evidence/build/editor_ui.log |
 | Repeated editor lifecycle | 5 | evidence/build/lifecycle.log |
 | Exported executable | 18 | evidence/build/exported.log |
 | Native Windows file picker | 1 | evidence/build/native-dialog.log |
 | Build rejection gates | 3 | evidence/build-gates/result.log |
-| Total | 265 | |
+| Total | 272 | |
 
 The lifecycle suite repeats 24 edit/undo/redo/save/reopen cycles while creating and closing settings, asset and output windows. Its node counts check for accumulated UI objects. It does not establish multi-hour memory/GPU stability.
 

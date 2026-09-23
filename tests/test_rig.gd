@@ -116,6 +116,14 @@ func run() -> void:
 	await RenderingServer.frame_post_draw
 	rendered = app.render_target.get_texture().get_image()
 	check(rendered.get_pixel(272, 256).r < 0.1 and rendered.get_pixel(272, 256).g < 0.1, "Multiply blend darkens actual layer colors")
+	child.blend = 0
+	child.tint = "ff0000ff"
+	await process_frame
+	await process_frame
+	await RenderingServer.frame_post_draw
+	rendered = app.render_target.get_texture().get_image()
+	check(rendered.get_pixel(272, 256).g < 0.1, "Per-part tint modulates rendered artwork")
+	child.tint = "ffffffff"
 	check(app._pick_layer(Vector2(288, 256)) == 1, "Canvas hit testing selects top layer")
 	app._capture_costume()
 	app.document.data.costumes[0].hotkey = 77

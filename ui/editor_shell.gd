@@ -323,7 +323,7 @@ func build_menus(root: VBoxContainer) -> void:
 			popup.set_item_tooltip(i, entries[i][0])
 		popup.id_pressed.connect(func(i): entries[i][1].call())
 	app._spacer(bar)
-	bar.add_child(app._label("PUPPET STUDIO  /  0.4", 11, "7f8d9a"))
+	bar.add_child(app._label("PUPPET STUDIO  /  " + str(ProjectSettings.get_setting("application/config/version", "alpha")).trim_suffix("-alpha"), 11, "7f8d9a"))
 
 func refresh() -> void:
 	workflow = app.document.data.get("workflow", "simple" if app.document.data.layers.is_empty() else "layered")
@@ -396,7 +396,7 @@ func route_inspector(properties_end: int, audio_end: int, output_end: int) -> vo
 				elif label in ["Pivot X", "Pivot Y", "Spring follow-through", "Position spring", "Rotation spring", "Spring frequency", "Spring damping"] or label.begins_with("Parent"): category = "Rig"
 				elif label in ["Loop animation", "Sheet columns", "Sheet rows", "Animation fps"]: category = "Animation"
 				elif label in ["Sway X", "Float Y", "Sway speed X", "Sway speed Y", "Wave phase", "Rotation min", "Rotation max", "Rotation drag", "Squash / stretch", "Rotation sway", "Bounce", "Pointer follow range", "Ignore body bounce"]: category = "Motion"
-				elif label in ["Visible", "Opacity", "Speech visibility", "Eye visibility", "Always visible", "Normal blend", "Clip linked layers to this image", "Background shortcut (Windows)", "Toggle layer live"]: category = "Visibility"
+				elif label in ["Visible", "Part color tint", "Opacity", "Speech visibility", "Eye visibility", "Always visible", "Normal blend", "Clip linked layers to this image", "Background shortcut (Windows)", "Toggle layer live"]: category = "Visibility"
 			else:
 				if label in ["X offset", "Y offset", "Scale", "Rotation"]: category = "Layout"
 				elif node is LineEdit or label == "Restart animation on expression change": category = "Expression"
