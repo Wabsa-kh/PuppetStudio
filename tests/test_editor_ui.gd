@@ -40,6 +40,15 @@ func run() -> void:
 	check(app.shell.slot_buttons.idle.icon == app.document.texture(app.document.data.expressions[0].idle), "Idle tile displays the actual assigned image")
 	app._select_expression(1)
 	check(app.shell.slot_buttons.talk.icon == app.document.texture(app.document.data.expressions[1].talk), "Changing expression refreshes image previews")
+	check(app.expression_bar.get_child(1).text.begins_with("2  "), "Expression button shows its assigned focused shortcut")
+	var keys_button := find_button(root, "Keys…")
+	check(keys_button != null, "Expression bar exposes shortcut setup directly")
+	keys_button.pressed.emit()
+	await process_frame
+	check(app.shell.page == "Expression" and "Expression" in app.shell.routed_controls.values(), "Shortcut setup opens the selected expression controls")
+	await process_frame
+	await shot(root, "ui-expression-shortcuts.png")
+	app.shell.select_page("Artwork", true)
 	check(not app.shell.parts_panel.visible, "Simple workflow hides empty rig hierarchy")
 	await shot(root, "ui-simple.png")
 	app.shell.open_assets()
@@ -61,14 +70,14 @@ func run() -> void:
 	await process_frame
 	app.shell.open_wizard()
 	await process_frame
-	check(app.shell.wizard_choices.size() == 3, "Creation window offers three distinct workflows")
+	check(app.shell.wizard_choices.size() == 2, "Creation window separates quick and layered workflows")
 	await shot(app.shell.wizard, "ui-creation.png")
 	app.shell.wizard.hide()
 	app.shell.wizard.queue_free()
 	await process_frame
-	for mode in range(3):
+	for mode in range(2):
 		app.shell.create_character(mode, "Workflow test")
-		check(app.document.data.workflow == ["simple", "layered", "advanced"][mode], "Creation applies workflow " + str(mode))
+		check(app.document.data.workflow == ["simple", "layered"][mode], "Creation applies workflow " + str(mode))
 		check(app.document.validate(app.document.data).is_empty(), "Created workflow produces valid portable data " + str(mode))
 	app._load_project("res://samples/Rigged-Mochi.puppet")
 	app._select_layer(2)
@@ -98,6 +107,25 @@ func run() -> void:
 		for node in app.inspector.get_children():
 			if node.visible and node.has_meta("ui_category"):
 				check(node.get_meta("ui_category") == title, title + " excludes unrelated controls")
+		if title == "Motion clips":
+			var timeline = app.inspector.get_child(0)
+			check(timeline.get_script().resource_path.ends_with("motion_visual.gd") and timeline.timeline, "Pose editor begins with an interactive timeline")
+			var press := InputEventMouseButton.new()
+			press.button_index = MOUSE_BUTTON_LEFT
+			press.pressed = true
+			press.position = Vector2(timeline.size.x * 0.25, 65)
+			timeline._gui_input(press)
+			var first_time: float = app.key_time
+			var drag := InputEventMouseMotion.new()
+			drag.position = Vector2(timeline.size.x * 0.75, 65)
+			timeline._gui_input(drag)
+			check(app.key_time > first_time and timeline.dragging, "Dragging the timeline updates the playhead continuously")
+			var release := InputEventMouseButton.new()
+			release.button_index = MOUSE_BUTTON_LEFT
+			release.pressed = false
+			release.position = drag.position
+			timeline._gui_input(release)
+			check(not timeline.dragging and app.avatar.clips_preview and not app.avatar.clips_playing, "Releasing the playhead leaves a stable pose preview")
 		if title in ["Audio", "Motion clips"]: await shot(app.shell.tool_window, "ui-" + title.to_lower().replace(" ", "-") + ".png")
 		app.shell.close_tool()
 		await process_frame

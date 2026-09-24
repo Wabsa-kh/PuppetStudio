@@ -45,16 +45,16 @@ const DESCRIPTIONS := {
 	"Image": "The artwork used by this part. Replace it without losing its rig settings.",
 	"Layout": "Place and size the selected artwork. Use the canvas tools for direct editing.",
 	"Behavior": "Control the character's blinking, speech bounce and idle movement.",
-	"Expression": "Name this expression and choose how its keyboard trigger behaves.",
+	"Expression": "Choose the keys for this expression and decide whether it selects, holds, toggles, or plays briefly.",
 	"Visibility": "Combine mouth and eye rules, blend modes and live visibility shortcuts.",
-	"Rig": "Attach this part, position its pivot and tune spring follow-through. Use Rest pose while assembling.",
-	"Motion": "Tune sine waves, inertia and pointer following. Green is X; blue is Y.",
-	"Animation": "Set the grid and playback speed of an image sheet. Open Motion clips for keyframed movement.",
+	"Rig": "Choose what this part follows, place its pivot, then add soft spring follow-through.",
+	"Motion": "Add idle sway, bounce, drag and pointer following. Green is horizontal; blue is vertical.",
+	"Animation": "Set up an image sheet or open the pose timeline for keyframed movement.",
 	"Audio": "Choose a microphone, watch its level, then calibrate against your room noise.",
 	"Output": "Configure the clean capture window. Editor guides are never included in output.",
 	"Integrations": "Allow a local controller to change expressions and costumes. The server starts only when enabled.",
 	"Costumes": "Save sets of visible parts. Costumes remain independent of mouth and eye state.",
-	"Motion clips": "Record poses at different times. Click the ruler to scrub; select a key to edit it.",
+	"Motion clips": "Drag the playhead to a time, arrange the selected part, then save that pose. Diamonds are saved poses.",
 }
 
 func icon(kind: String) -> Texture2D:
@@ -71,6 +71,10 @@ func icon(kind: String) -> Texture2D:
 		"trash": '<path d="M4 6h16M9 3h6M6 6l1 15h10l1-15M10 10v7M14 10v7"/>',
 		"settings": '<path d="M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6"/>',
 		"move": '<path d="M12 2v20M2 12h20m-13-7 3-3 3 3M9 19l3 3 3-3M5 9l-3 3 3 3m14-6 3 3-3 3"/>',
+		"copy": '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>',
+		"link": '<path d="M9 15l6-6M7 17H6a4 4 0 0 1 0-8h3M15 7h3a4 4 0 0 1 0 8h-3"/>',
+		"play": '<path d="M8 5v14l11-7Z"/>',
+		"key": '<path d="M15 8a5 5 0 1 1-2 4l8-8M17 8l3 3M14 11l3 3"/>',
 	}.get(kind, '<circle cx="12" cy="12" r="8"/><path d="M12 7v6M12 16v1"/>')
 	var image := Image.new()
 	image.load_svg_from_string('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g fill="none" stroke="#b8c3ce" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">%s</g></svg>' % shape)
@@ -102,7 +106,7 @@ func explain(label: String) -> String:
 		"Sheet columns": "Number of frames across your sprite-sheet image; not the image width in pixels.",
 		"Sheet rows": "Number of frame rows in the sprite sheet.",
 		"Animation fps": "Sprite-sheet frames played each second. Zero holds the first frame.",
-		"Parent · position / rotation / scale": "Choose the part this one follows. Attaching preserves its rest position; cyclic links are unavailable.",
+		"ATTACH TO": "Choose the part this one follows. Attaching preserves its rest position; cyclic links are unavailable.",
 		"Bounce force": "Initial upward speed when speech starts. Set to zero to disable the speech hop.",
 		"Bounce gravity": "Acceleration returning the character after a speech hop.",
 		"Dim while silent": "Reduce character brightness when the microphone is below the talking threshold.",
@@ -132,12 +136,12 @@ func setup(owner_app) -> void:
 	app.title_label = app._label("Untitled", 16)
 	app.title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bar.add_child(app.title_label)
-	mode_label = app._label("Quick character", 11, "a6b79b")
+	mode_label = app._label("Quick avatar", 11, "a6b79b")
 	bar.add_child(mode_label)
 	bar.add_child(button("Audio", func(): open_tool("Audio"), "audio", "Microphone, calibration and background shortcuts"))
 	bar.add_child(button("Capture", func(): open_tool("Output"), "settings", "Output resolution, transparency and frame rate"))
 	app.view_tabs = OptionButton.new()
-	for text in ["Rig", "Artwork", "Perform"]: app.view_tabs.add_item(text)
+	for text in ["Build", "Expressions", "Perform"]: app.view_tabs.add_item(text)
 	app.view_tabs.item_selected.connect(app._change_workspace)
 	bar.add_child(app.view_tabs)
 	app.output_button = button("Start output", app._toggle_output, "output", "Open the clean avatar window for capture")
@@ -152,7 +156,8 @@ func setup(owner_app) -> void:
 	parts_panel = VBoxContainer.new()
 	left.add_child(parts_panel)
 	parts_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	parts_panel.add_child(app._label("Character parts", 12, "aeb6c0"))
+	parts_panel.add_child(app._label("PARTS", 12, "aeb6c0"))
+	parts_panel.add_child(app._label("Select a part to arrange or attach it", 11, "8995a1"))
 	app.layers_list = ItemList.new()
 	app.layers_list.fixed_icon_size = Vector2i(30, 30)
 	app.layers_list.custom_minimum_size.y = 150
@@ -160,12 +165,15 @@ func setup(owner_app) -> void:
 	app.layers_list.item_selected.connect(app._select_layer)
 	app.layers_list.tooltip_text = "Select a part to inspect it. The list follows draw order; the canvas shows its attachment links."
 	parts_panel.add_child(app.layers_list)
-	var actions := HBoxContainer.new()
+	var actions := GridContainer.new()
+	actions.columns = 3
 	parts_panel.add_child(actions)
 	actions.add_child(button("Add", app._add_layer_dialog, "add", "Import one or more images as separate parts"))
-	actions.add_child(button("↑", func(): app._move_layer(-1), "", "Move selected part backward in draw order"))
-	actions.add_child(button("↓", func(): app._move_layer(1), "", "Move selected part forward in draw order"))
-	actions.add_child(button("", func(): confirm_action("Remove part?", "Remove the selected part? Attached children keep their positions. You can undo this.", app._delete_layer), "trash", "Remove selected part"))
+	actions.add_child(button("Copy", app._duplicate_layer, "copy", "Duplicate the selected part"))
+	actions.add_child(button("Attach", func(): select_page("Rig"), "link", "Attach the selected part to another part"))
+	actions.add_child(button("Back", func(): app._move_layer(-1), "", "Move selected part backward in draw order"))
+	actions.add_child(button("Front", func(): app._move_layer(1), "", "Move selected part forward in draw order"))
+	actions.add_child(button("Delete", func(): confirm_action("Remove part?", "Remove the selected part? Attached children keep their positions. You can undo this.", app._delete_layer), "trash", "Remove selected part"))
 	left.add_child(HSeparator.new())
 	left.add_child(app._label("Project artwork", 12, "aeb6c0"))
 	left.add_child(app._label("Images used by this character", 12, "959fac"))
@@ -258,7 +266,7 @@ func setup(owner_app) -> void:
 	center.add_child(expression_panel)
 	var expressions := VBoxContainer.new()
 	expression_panel.add_child(expressions)
-	expressions.add_child(app._label("Expressions  ·  click to edit, keys 1–9 to trigger", 12, "aeb6c0"))
+	expressions.add_child(app._label("Expressions  ·  each button shows its focused shortcut", 12, "aeb6c0"))
 	var expr_scroll := ScrollContainer.new()
 	expr_scroll.custom_minimum_size.y = 66
 	expressions.add_child(expr_scroll)
@@ -299,9 +307,9 @@ func build_menus(root: VBoxContainer) -> void:
 	root.add_child(bar)
 	var definitions := {
 		"File": [["New character…", open_wizard, "file"], ["Open…", func(): app.load_dialog.popup_file_dialog(), "file"], ["Save", app._save_project, "file"], ["Save as…", app._save_as, "file"], ["Import parts…", app._add_layer_dialog, "image"], ["Asset browser…", open_assets, "image"], ["Export artwork…", func(): app.export_art_dialog.popup_file_dialog(), "image"], ["Open rig example", func(): app._request_load("res://samples/Rigged-Mochi.puppet"), "rig"], ["Quit", app._quit_app, ""]],
-		"Edit": [["Undo", app._undo, ""], ["Redo", app._redo, ""], ["Duplicate part", app._duplicate_layer, "image"], ["Remove selected part…", func(): confirm_action("Remove part?", "Remove the selected part? This can be undone.", app._delete_layer), "trash"], ["Preferences…", open_preferences, "settings"]],
-		"Character": [["Character setup…", open_wizard, "file"], ["Expression artwork", func(): select_page("Artwork", true), "image"], ["Expression settings", func(): select_page("Expression", true), "settings"], ["Add expression…", app._new_expression, "add"], ["Remove expression…", func(): confirm_action("Remove expression?", "Remove the selected expression and its state mapping? This can be undone.", app._delete_expression), "trash"], ["Costumes…", func(): open_tool("Costumes"), "eye"]],
-		"Rig": [["Part layout", func(): select_page("Layout"), "move"], ["Attachments and springs", func(): select_page("Rig"), "rig"], ["Visibility and shortcuts", func(): select_page("Visibility"), "eye"], ["Procedural motion", func(): select_page("Motion"), "motion"], ["Sprite-sheet animation", func(): select_page("Animation"), "image"], ["Reset motion", func(): app.avatar.reset_motion(), ""]],
+		"Edit": [["Undo", app._undo, ""], ["Redo", app._redo, ""], ["Duplicate part", app._duplicate_layer, "copy"], ["Remove selected part…", func(): confirm_action("Remove part?", "Remove the selected part? This can be undone.", app._delete_layer), "trash"], ["Preferences…", open_preferences, "settings"]],
+		"Character": [["Character setup…", open_wizard, "file"], ["Expression artwork", func(): select_page("Artwork", true), "image"], ["Expression shortcuts…", func(): select_page("Expression", true), "settings"], ["Add expression…", app._new_expression, "add"], ["Remove expression…", func(): confirm_action("Remove expression?", "Remove the selected expression and its state mapping? This can be undone.", app._delete_expression), "trash"], ["Costumes…", func(): open_tool("Costumes"), "eye"]],
+		"Parts": [["Arrange selected part", func(): select_page("Layout"), "move"], ["Attach selected part", func(): select_page("Rig"), "link"], ["Visibility and shortcuts", func(): select_page("Visibility"), "eye"], ["Idle movement", func(): select_page("Motion"), "motion"], ["Image-sheet frames", func(): select_page("Animation"), "image"], ["Reset movement", func(): app.avatar.reset_motion(), ""]],
 		"Animation": [["Motion clips…", func(): open_tool("Motion clips"), "motion"], ["Play / pause clips", func(): app.avatar.clips_playing = not app.avatar.clips_playing, "motion"], ["Stop clips", func():
 			app.avatar.clips_playing = false
 			app.avatar.clips_preview = false
@@ -327,7 +335,7 @@ func build_menus(root: VBoxContainer) -> void:
 
 func refresh() -> void:
 	workflow = app.document.data.get("workflow", "simple" if app.document.data.layers.is_empty() else "layered")
-	mode_label.text = {"simple": "Quick character", "layered": "Layered character", "advanced": "Animated rig"}.get(workflow, "Layered character")
+	mode_label.text = {"simple": "Quick avatar", "layered": "Layered avatar", "advanced": "Layered avatar"}.get(workflow, "Layered avatar")
 	parts_panel.visible = workflow != "simple" or not app.document.data.layers.is_empty()
 	for i in range(app.document.data.layers.size()):
 		var layer: Dictionary = app.document.data.layers[i]
@@ -393,7 +401,7 @@ func route_inspector(properties_end: int, audio_end: int, output_end: int) -> vo
 			if app.selected_layer >= 0:
 				if node is LineEdit or label == "LAYER PROPERTIES" or label == "Replace layer image…": category = "Image"
 				elif label in ["X offset", "Y offset", "Scale", "Width scale", "Height scale", "Rotation", "Lock canvas position", "Mirror horizontally", "Mirror vertically"]: category = "Layout"
-				elif label in ["Pivot X", "Pivot Y", "Spring follow-through", "Position spring", "Rotation spring", "Spring frequency", "Spring damping"] or label.begins_with("Parent"): category = "Rig"
+				elif label in ["ATTACH TO", "Pivot X", "Pivot Y", "Spring follow-through", "Position spring", "Rotation spring", "Spring frequency", "Spring damping"] or label.begins_with("Parent"): category = "Rig"
 				elif label in ["Loop animation", "Sheet columns", "Sheet rows", "Animation fps"]: category = "Animation"
 				elif label in ["Sway X", "Float Y", "Sway speed X", "Sway speed Y", "Wave phase", "Rotation min", "Rotation max", "Rotation drag", "Squash / stretch", "Rotation sway", "Bounce", "Pointer follow range", "Ignore body bounce"]: category = "Motion"
 				elif label in ["Visible", "Part color tint", "Opacity", "Speech visibility", "Eye visibility", "Always visible", "Normal blend", "Clip linked layers to this image", "Background shortcut (Windows)", "Toggle layer live"]: category = "Visibility"
@@ -424,8 +432,9 @@ func route_inspector(properties_end: int, audio_end: int, output_end: int) -> vo
 		for child in navigation.get_children():
 			navigation.remove_child(child)
 			child.queue_free()
+		var page_names := {"Rig": "Attach", "Motion": "Movement", "Animation": "Frames", "Image": "Artwork"}
 		for name in pages:
-			var nav := button(name, func():
+			var nav := button(page_names.get(name, name), func():
 				page = name
 				app._refresh_inspector(), {"Artwork": "image", "Image": "image", "Layout": "move", "Visibility": "eye", "Rig": "rig", "Motion": "motion", "Animation": "motion"}.get(name, "settings"), DESCRIPTIONS.get(name, name))
 			nav.toggle_mode = true
@@ -437,7 +446,7 @@ func route_inspector(properties_end: int, audio_end: int, output_end: int) -> vo
 		if page == "Artwork": build_slots(app.inspector)
 		elif page == "Image": build_layer_preview(app.inspector)
 		elif page == "Motion": add_visual(false)
-		elif page == "Animation": app.inspector.add_child(button("Open motion clips…", func(): open_tool("Motion clips"), "motion", "Animate this part's position, rotation, scale and opacity with keys"))
+		elif page == "Animation": app.inspector.add_child(button("Open pose timeline…", func(): open_tool("Motion clips"), "key", "Animate this part's position, rotation, scale and opacity with saved poses"))
 	elif scope == "Motion clips": add_visual(true)
 
 func decorate(node: Node, label := "") -> void:
@@ -470,7 +479,7 @@ func build_slots(parent: VBoxContainer) -> void:
 		steps.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		parent.add_child(steps)
 		if mode == "advanced":
-			var advanced: Label = app._label("4. Attach parts in Rig and tune their springs.\n\n5. Create costume variations, then record poses in Animation → Motion clips.", 14)
+			var advanced: Label = app._label("4. Use Attach to connect hair, eyes and accessories to the head or body.\n\n5. Add movement, costumes, and saved poses when the basic character works.", 14)
 			advanced.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			parent.add_child(advanced)
 		parent.add_child(button("Import character parts…", app._add_layer_dialog, "add", "Select multiple part images with the operating system's file picker"))
@@ -524,7 +533,9 @@ func build_layer_preview(parent: VBoxContainer) -> void:
 func open_tool(name: String) -> void:
 	close_tool()
 	scope = name
-	tool_window = make_window(name, Vector2i(600, 720))
+	tool_window = make_window(name, Vector2i(940, 720) if name == "Motion clips" else Vector2i(600, 720))
+	if name == "Motion clips":
+		tool_window.exclusive = false
 	app.calibration_dialog.reparent(tool_window)
 	app.notice.reparent(tool_window)
 	tool_window.close_requested.connect(close_tool)
@@ -598,7 +609,7 @@ func _process(_delta: float) -> void:
 		project_assets.set_item_icon(index, folder_thumbnail(asset_paths[index]))
 
 func show_guide() -> void:
-	app._message("CREATE\nFile → New character opens the setup window. Simple uses four image states; Layered assembles separate parts; Advanced adds motion clips.\n\nEDIT\nChoose a part on the left, then a focused category on the right. Artwork slots show their images. Asset browser previews project images and local folders.\n\nPERFORM\nCharacter → Costumes and Animation → Motion clips open dedicated editors. Audio configures your microphone. Capture configures clean output.\n\nKeyboard: Ctrl+S save · Ctrl+Z undo · Ctrl+Shift+Z redo · Ctrl+D duplicate · 1–9 expressions · F1–F9 costumes.\n\nExisting features remain available through File, Edit, Character, Rig, Animation, Studio and View.")
+	app._message("CREATE\nFile → New character offers two clear starting points. Quick uses four mouth and eye images. Layered assembles separate body, face, hair and accessory parts.\n\nBUILD\nSelect a part on the left, arrange it on the canvas, then use Attach to choose what it follows. Movement adds sway and springs; Frames handles image sheets and saved poses.\n\nSHORTCUTS\nEach expression button shows its key. Choose Keys… beside the expression list to change focused and background shortcuts.\n\nPERFORM\nCostumes, microphone setup and capture output are available from their named menus and buttons.")
 
 func diagnostic_report() -> String:
 	var shortcut_state := "Connected" if app.global_input.active and app.global_input.received_heartbeat else ("Connecting (up to 30 seconds)" if app.global_input.active else "Off")
@@ -654,9 +665,8 @@ func open_wizard() -> void:
 	wizard_choices.clear()
 	var group := ButtonGroup.new()
 	var choices := [
-		["Quick character", "Choose four images and start talking. Best for a first avatar.", "image"],
-		["Layered character", "Separate body, head, eyes and accessories with parent attachments.", "rig"],
-		["Animated rig", "Layered artwork with springs, costumes and motion clips.", "motion"],
+		["Quick avatar", "Use up to four images per expression: idle, talking, blink, and talking + blink.", "image"],
+		["Layered avatar", "Build from separate body, face, hair and accessory images. Attach parts and add movement when ready.", "link"],
 	]
 	for i in range(choices.size()):
 		var choice := button(choices[i][0] + "\n" + choices[i][1], func(): wizard_mode = i, choices[i][2], choices[i][1])
@@ -692,7 +702,7 @@ func create_character(mode: int, title: String) -> void:
 	app._clear_recovery()
 	app.document.fresh()
 	app.document.data.name = title.left(80)
-	app.document.data.workflow = ["simple", "layered", "advanced"][clampi(mode, 0, 2)]
+	app.document.data.workflow = ["simple", "layered"][clampi(mode, 0, 1)]
 	app.document.data.expressions.append({"name": "Neutral", "idle": "", "talk": "", "blink": "", "talk_blink": ""})
 	app.performance.reset()
 	app.avatar.costume = -1
@@ -707,7 +717,7 @@ func create_character(mode: int, title: String) -> void:
 	page = "Artwork"
 	app._change_workspace(0)
 	app._refresh_all()
-	app.status.text = "Choose your Idle image to begin." if mode == 0 else "Import your parts with File → Import parts. Select a part to attach and rig it."
+	app.status.text = "Choose your Idle image to begin." if mode == 0 else "Import separate artwork parts, arrange them on the canvas, then use Attach to build the hierarchy."
 
 func open_preferences() -> void:
 	if is_instance_valid(preferences):

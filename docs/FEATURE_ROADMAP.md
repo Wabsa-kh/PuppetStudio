@@ -1,12 +1,12 @@
-# Feature roadmap after 0.5.1 alpha
+# Feature roadmap after 0.6.0 alpha
 
-Puppet Studio 0.5.1 supports quick and layered PNGTuber characters. The remaining work is grouped into releases that can each ship with a complete workflow and useful test coverage.
+Puppet Studio 0.6.0 supports quick and layered PNGTuber characters. The remaining work is grouped into releases that can each ship with a complete workflow and useful test coverage.
 
 ## 0.6 — authoring productivity
 
 - Multiselect, hierarchy drag/drop, folders and reusable rig/motion presets.
 - Crop-to-content import, replace-shared-image workflow and model optimizer with undo and preview.
-- Per-expression configurable input bindings; mouse, gamepad and MIDI binding UI.
+- Mouse, gamepad and MIDI binding UI.
 - Costume overrides for image, transform and tint in addition to visibility.
 - Fade-in/fade-out transitions and richer state effects.
 

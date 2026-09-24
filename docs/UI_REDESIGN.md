@@ -11,7 +11,7 @@ The 0.3 action handlers, project format, runtime, output renderer, importer and 
 | Undo/redo, duplicate/remove part | Edit |
 | Base placement and scale | Base character → Layout |
 | Four expression images, clear/replace | Character → Expression artwork; visual slots |
-| Name, trigger style, timed duration, restart animation | Character → Expression settings |
+| Name, focused/background shortcuts, trigger style, timed duration, restart animation | Expression strip → Keys; Character → Expression shortcuts |
 | Add/remove expression | Expression strip +; Character menu; removal confirmation |
 | Blink timing, body bounce, gravity, costume bounce, motion | Base character → Behavior |
 | Part rename/replace image | Selected part → Image |

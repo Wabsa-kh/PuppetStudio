@@ -294,18 +294,33 @@ func _refresh_all() -> void:
 	layers_list.clear()
 	layers_list.add_item("◈  Base character")
 	for layer in document.data.layers:
-		layers_list.add_item(("●  " if layer.visible else "○  ") + str(layer.name))
+		var depth := 0
+		var parent_id: String = str(layer.get("parent", ""))
+		var visited := {}
+		while not parent_id.is_empty() and depth < 8 and not visited.has(parent_id):
+			visited[parent_id] = true
+			depth += 1
+			var current_id := parent_id
+			parent_id = ""
+			for candidate in document.data.layers:
+				if str(candidate.id) == current_id:
+					parent_id = str(candidate.get("parent", ""))
+					break
+		var branch := "  ".repeat(depth) + ("↳ " if depth > 0 else "")
+		layers_list.add_item(branch + ("●  " if layer.visible else "○  ") + str(layer.name))
 	layers_list.select(selected_layer + 1)
 	for child in expression_bar.get_children():
 		expression_bar.remove_child(child)
 		child.queue_free()
 	for index in range(document.data.expressions.size()):
 		var state: Dictionary = document.data.expressions[index]
-		var button := _button(str(index + 1) + "  " + state.name, _select_expression.bind(index))
+		var key := int(state.get("key", 49 + index if index < 9 else 0))
+		var button := _button(_key_name(key) + "  " + state.name, _select_expression.bind(index), "Select " + state.name + ". Focused shortcut: " + _key_name(key))
 		button.toggle_mode = true
 		button.button_pressed = index == selected_expression
 		expression_bar.add_child(button)
 	expression_bar.add_child(_button("+", _new_expression, "Duplicate the selected expression"))
+	expression_bar.add_child(_button("Keys…", func(): shell.select_page("Expression", true), "Set expression shortcuts and trigger behavior"))
 	_refresh_inspector()
 	_resize_preview()
 	if shell != null: shell.refresh()
@@ -407,7 +422,7 @@ func _refresh_inspector() -> void:
 	var global_toggle := CheckBox.new()
 	global_toggle.text = "Background hotkeys (Windows)"
 	global_toggle.button_pressed = global_input.active
-	global_toggle.tooltip_text = "Ctrl+Alt+1–9: expression · Ctrl+Alt+M: mute · Ctrl+Alt+B: blink · Ctrl+Alt+Space: PTT"
+	global_toggle.tooltip_text = "Expression shortcuts are set on the Expression page. Mute, blink and PTT default to Ctrl+Alt+M, Ctrl+Alt+B and Ctrl+Alt+Space."
 	global_toggle.toggled.connect(func(enabled):
 		if enabled:
 			var error: String = _start_shortcuts()
@@ -552,9 +567,10 @@ func _build_layer_inspector() -> void:
 	blend.select(int(layer.get("blend", 0)))
 	blend.item_selected.connect(func(i): _set_layer("blend", i))
 	inspector.add_child(blend)
-	inspector.add_child(_label("Parent · position / rotation / scale", 11, "929ba8"))
+	inspector.add_child(_label("ATTACH TO", 12, "aeb6c0"))
+	inspector.add_child(_label("The selected part follows its parent. Choose None for a free root part.", 11, "929ba8"))
 	var parent_picker := OptionButton.new()
-	parent_picker.add_item("None")
+	parent_picker.add_item("None · root part")
 	parent_picker.set_item_metadata(0, "")
 	for candidate in document.data.layers:
 		if not document.can_parent(layer.id, candidate.id):
@@ -566,6 +582,10 @@ func _build_layer_inspector() -> void:
 			parent_picker.select(item_index)
 	parent_picker.item_selected.connect(func(i): _reparent_layer(parent_picker.get_item_metadata(i)))
 	inspector.add_child(parent_picker)
+	if str(layer.get("parent", "")).is_empty():
+		inspector.add_child(_label("This is a root part. Attach it to the head, body, or another part to make them move together.", 11, "8995a1"))
+	else:
+		inspector.add_child(_label("Attached. The green line on the canvas shows the connection.", 11, "a8bf91"))
 	_build_hotkey_control(layer, 0)
 	inspector.add_child(_button("Toggle layer live", _toggle_live_layer.bind(layer.id)))
 	inspector.add_child(_button("Replace layer image…", _replace_layer_dialog))
@@ -636,6 +656,10 @@ func _create_expression() -> void:
 	document.checkpoint()
 	var expression: Dictionary = document.data.expressions[selected_expression].duplicate(true)
 	expression.name = name_edit.text.strip_edges().left(40)
+	var next_index: int = document.data.expressions.size()
+	expression.key = 49 + next_index if next_index < 9 else 0
+	expression.hotkey = 49 + next_index if next_index < 9 else 0
+	expression.hotkey_mods = 3
 	document.data.expressions.append(expression)
 	selected_expression = document.data.expressions.size() - 1
 	performance.reset(selected_expression)
@@ -1160,8 +1184,11 @@ func _global_action(action: String, pressed: bool) -> void:
 
 func _input(event: InputEvent) -> void:
 	# Releases must arrive even when a focused UI control consumes key presses.
-	if event is InputEventKey and not event.pressed and event.keycode >= KEY_1 and event.keycode <= KEY_9:
-		_trigger_expression(event.keycode - KEY_1, false, "keyboard")
+	if event is InputEventKey and not event.pressed:
+		for index in range(document.data.expressions.size()):
+			var key := int(document.data.expressions[index].get("key", 49 + index if index < 9 else 0))
+			if key != 0 and event.keycode == key:
+				_trigger_expression(index, false, "keyboard")
 
 func _resize_preview() -> void:
 	if not is_instance_valid(preview_area) or not is_instance_valid(preview_texture):
@@ -1198,10 +1225,12 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		layer.x += step * (int(event.keycode == KEY_RIGHT) - int(event.keycode == KEY_LEFT))
 		layer.y += step * (int(event.keycode == KEY_DOWN) - int(event.keycode == KEY_UP))
 		_refresh_inspector()
-	if event.keycode >= KEY_1 and event.keycode <= KEY_9:
-		var index: int = event.keycode - KEY_1
-		if index < document.data.expressions.size():
-			_trigger_expression(index, true, "keyboard")
+	if not event.ctrl_pressed and not event.alt_pressed and not event.shift_pressed:
+		for index in range(document.data.expressions.size()):
+			var key := int(document.data.expressions[index].get("key", 49 + index if index < 9 else 0))
+			if key != 0 and event.keycode == key:
+				_trigger_expression(index, true, "keyboard")
+				return
 	if event.keycode >= KEY_F1 and event.keycode <= KEY_F9:
 		_cycle_costume(event.keycode - KEY_F1)
 	if event.keycode == KEY_B:
@@ -1224,7 +1253,7 @@ func _show_obs_help() -> void:
 	_message("1. Start output in Puppet Studio.\n2. In OBS, try Game Capture → Capture specific window.\n3. Select ‘Puppet Studio — Avatar Output’ and enable Allow Transparency.\n4. If that does not work, use Window Capture and select a green/magenta output background, then add a Color Key filter in OBS.\n\nKeep the output window running. Capture alpha varies by system and has not yet been certified in this alpha.")
 
 func _show_help() -> void:
-	_message("Puppet Studio 0.5.1 alpha\n\nStart with File → New character, or open a .puppet file. Select a part to edit it; use Move, Pivot, Rotate, and Scale directly on the canvas.\n\nShortcuts\n1–9  Expressions\nF1–F9  Costumes\nB  Blink\nSpace  Push to talk\nCtrl+S  Save\nCtrl+Z / Ctrl+Shift+Z  Undo / redo\n\nSaved .puppet files include their artwork. Right-click the output window to return to the editor.\n\nSee Help → System status when microphone, capture, or background shortcuts are not behaving as expected.")
+	_message("Puppet Studio 0.6.0 alpha\n\nStart with File → New character, or open a .puppet file. Select a part to edit it; use Move, Pivot, Rotate, and Scale directly on the canvas.\n\nExpression shortcuts\nThe assigned key is shown on every expression button. Click Keys… beside the expression list, or use Character → Expression shortcuts, to change focused and background keys.\n\nOther shortcuts\nF1–F9  Costumes\nB  Blink\nSpace  Push to talk\nCtrl+S  Save\nCtrl+Z / Ctrl+Shift+Z  Undo / redo\n\nSaved .puppet files include their artwork. Right-click the output window to return to the editor.\n\nSee Help → System status when microphone, capture, or background shortcuts are not behaving as expected.")
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and performance != null:
@@ -1310,6 +1339,11 @@ func _apply_render_settings() -> void:
 func _build_performance_inspector() -> void:
 	_section(inspector, "Expression triggers")
 	inspector.add_child(_label(document.data.expressions[selected_expression].name, 14))
+	var state: Dictionary = document.data.expressions[selected_expression]
+	_build_focused_expression_key(state, 49 + selected_expression if selected_expression < 9 else 0)
+	_build_hotkey_control(state, 49 + selected_expression if selected_expression < 9 else 0, "Background shortcut (Windows)")
+	inspector.add_child(_label("Enable Background hotkeys in Audio to use this shortcut outside Puppet Studio.", 11, "929daa"))
+	inspector.add_child(_label("Trigger behavior", 12))
 	var mode := OptionButton.new()
 	for caption in ["Select on press", "Hold while pressed", "Toggle with neutral", "Timed reaction"]:
 		mode.add_item(caption)
@@ -1318,18 +1352,19 @@ func _build_performance_inspector() -> void:
 		document.checkpoint()
 		document.data.expressions[selected_expression].trigger_mode = i
 		performance.reset(selected_expression)
+		_refresh_inspector()
 	)
 	inspector.add_child(mode)
-	_number(inspector, "Reaction seconds", float(document.data.expressions[selected_expression].get("reaction_seconds", 2.0)), 0.1, 60, 0.1, func(v):
-		document.checkpoint()
-		document.data.expressions[selected_expression].reaction_seconds = v
-	)
+	if int(document.data.expressions[selected_expression].get("trigger_mode", 0)) == 3:
+		_number(inspector, "Reaction seconds", float(document.data.expressions[selected_expression].get("reaction_seconds", 2.0)), 0.1, 60, 0.1, func(v):
+			document.checkpoint()
+			document.data.expressions[selected_expression].reaction_seconds = v
+		)
 	var trigger := Button.new()
 	trigger.text = "Test expression trigger"
 	trigger.button_down.connect(func(): _trigger_expression(selected_expression, true, "button"))
 	trigger.button_up.connect(func(): _trigger_expression(selected_expression, false, "button"))
 	inspector.add_child(trigger)
-	inspector.add_child(_label("Keys 1–9 · toggle returns to expression 1", 11))
 	_section(inspector, "Costumes")
 	inspector.add_child(_label("F1–F9 · press again for default", 11))
 	var picker := OptionButton.new()
@@ -1372,8 +1407,9 @@ func _build_performance_inspector() -> void:
 			_refresh_inspector()
 		))
 	_section(inspector, "Motion clips")
+	inspector.add_child(_label("Animate one selected part with saved poses. The character canvas remains your pose editor.", 11, "929daa"))
 	var transport := HBoxContainer.new()
-	transport.add_child(_button("Pause" if avatar.clips_playing else "Play clips", func():
+	transport.add_child(_button("Pause" if avatar.clips_playing else "Play", func():
 		avatar.clips_playing = not avatar.clips_playing
 		avatar.clips_preview = true
 		_refresh_inspector()
@@ -1386,11 +1422,12 @@ func _build_performance_inspector() -> void:
 	))
 	inspector.add_child(transport)
 	if selected_layer < 0:
-		inspector.add_child(_label("Select an accessory layer to edit its clip.", 11))
+		inspector.add_child(_label("Select a character part in the left panel before opening the pose timeline.", 11))
 		return
 	var layer: Dictionary = document.data.layers[selected_layer]
-	inspector.add_child(_label(layer.name, 14))
+	inspector.add_child(_label("ANIMATING  ·  " + str(layer.name), 14, "d7decf"))
 	var clip: Dictionary = layer.get("clip", {"duration": 2.0, "loop": true, "enabled": true, "keys": []})
+	_section(inspector, "Clip settings")
 	_number(inspector, "Duration (s)", float(clip.duration), 0.1, 60, 0.1, func(v):
 		for key in clip["keys"]:
 			if float(key.time) > v:
@@ -1413,7 +1450,8 @@ func _build_performance_inspector() -> void:
 			clip[entry[1]] = v
 		)
 		inspector.add_child(box)
-	_number(inspector, "Playhead / key time", minf(key_time, float(clip.duration)), 0, float(clip.duration), 0.01, func(v):
+	_section(inspector, "Pose at playhead")
+	_number(inspector, "Current time (seconds)", minf(key_time, float(clip.duration)), 0, float(clip.duration), 0.01, func(v):
 		key_time = v
 		avatar.clip_time = v
 		avatar.clips_playing = false
@@ -1431,7 +1469,8 @@ func _build_performance_inspector() -> void:
 			avatar.clips_preview = false
 			avatar.clips_playing = false
 		)
-	inspector.add_child(_button("Record / replace key at playhead", func():
+	inspector.add_child(_label("Arrange this part on the main canvas or use the values below, then save the pose.", 11, "929daa"))
+	inspector.add_child(_button("Save pose at playhead", func():
 		if clip["keys"].size() >= 128:
 			_message("This clip supports up to 128 keys.")
 			return
@@ -1440,6 +1479,9 @@ func _build_performance_inspector() -> void:
 		MotionClip.capture(layer, minf(key_time, float(clip.duration)), key_ease)
 		_refresh_inspector()
 	))
+	_section(inspector, "Saved poses")
+	if clip["keys"].is_empty():
+		inspector.add_child(_label("No saved poses yet. Move the playhead, arrange the part, and choose Save pose.", 11, "8995a1"))
 	for key in clip["keys"]:
 		var row := HBoxContainer.new()
 		row.add_child(_button("%.2f s  ·  %s" % [key.time, ["Linear", "Smooth", "Hold"][int(key.ease)]], func():
@@ -1569,8 +1611,40 @@ func _toggle_live_layer(id: String) -> void:
 	avatar.layer_toggles[id] = not bool(avatar.solver.visible.get(id, false))
 	status.text = "Layer visibility toggled for this session. Costume switching resets live toggles."
 
-func _build_hotkey_control(owner: Dictionary, default_key: int) -> void:
-	inspector.add_child(_label("Background shortcut (Windows)", 11))
+func _key_name(key: int) -> String:
+	if key == 0: return "—"
+	if key == 32: return "Space"
+	if key >= 112 and key <= 123: return "F" + str(key - 111)
+	if key >= 48 and key <= 90: return String.chr(key)
+	return "Key " + str(key)
+
+func _build_focused_expression_key(owner: Dictionary, default_key: int) -> void:
+	inspector.add_child(_label("Shortcut while Puppet Studio is focused", 12))
+	var keys := OptionButton.new()
+	keys.add_item("Disabled", 0)
+	for vk in range(48, 58): keys.add_item(String.chr(vk), vk)
+	for vk in range(65, 91):
+		if vk != KEY_B: keys.add_item(String.chr(vk), vk)
+	var current := int(owner.get("key", default_key))
+	keys.select(maxi(0, keys.get_item_index(current)))
+	keys.item_selected.connect(func(i):
+		var value := keys.get_item_id(i)
+		for index in range(document.data.expressions.size()):
+			var other: Dictionary = document.data.expressions[index]
+			if other == owner: continue
+			var other_key := int(other.get("key", 49 + index if index < 9 else 0))
+			if value != 0 and value == other_key:
+				_message(_key_name(value) + " is already assigned to " + str(other.name) + ".")
+				keys.select(maxi(0, keys.get_item_index(current)))
+				return
+		document.checkpoint()
+		owner.key = value
+		_refresh_all()
+	)
+	inspector.add_child(keys)
+
+func _build_hotkey_control(owner: Dictionary, default_key: int, heading := "Background shortcut (Windows)") -> void:
+	inspector.add_child(_label(heading, 12))
 	var row := HBoxContainer.new()
 	var modifiers := OptionButton.new()
 	for caption in ["None", "Ctrl", "Alt", "Ctrl+Alt", "Shift", "Ctrl+Shift", "Alt+Shift", "Ctrl+Alt+Shift"]:
@@ -1599,8 +1673,9 @@ func _build_hotkey_control(owner: Dictionary, default_key: int) -> void:
 
 func _shortcut_configuration() -> Dictionary:
 	var entries: Array = []
-	for index in range(mini(9, document.data.expressions.size())):
-		entries.append(["expression:" + str(index), 49 + index, 3])
+	for index in range(document.data.expressions.size()):
+		var expression: Dictionary = document.data.expressions[index]
+		entries.append(["expression:" + str(index), int(expression.get("hotkey", 49 + index if index < 9 else 0)), int(expression.get("hotkey_mods", 3))])
 	entries.append_array([["mute", 77, 3], ["blink", 66, 3], ["ptt", 32, 3]])
 	for index in range(document.data.get("costumes", []).size()):
 		var outfit: Dictionary = document.data.costumes[index]

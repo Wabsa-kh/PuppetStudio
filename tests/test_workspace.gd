@@ -67,6 +67,18 @@ func run() -> void:
 	app.name_edit.text = "Custom expression"
 	app._create_expression()
 	check(app.document.data.expressions.size() == 4, "New expression preserves existing mappings")
+	check(int(app.document.data.expressions[3].key) == KEY_4 and int(app.document.data.expressions[3].hotkey) == KEY_4, "New expression receives visible focused and background shortcuts")
+	app.document.data.expressions[1].key = KEY_A
+	var expression_event := InputEventKey.new()
+	expression_event.keycode = KEY_A
+	expression_event.pressed = true
+	app._unhandled_key_input(expression_event)
+	check(app.avatar.expression == 1, "Configured focused key triggers its expression")
+	expression_event.pressed = false
+	app._input(expression_event)
+	app.document.data.expressions[1].hotkey = KEY_Z
+	app.document.data.expressions[1].hotkey_mods = 5
+	check("expression:1,90,5;" in str(app._shortcut_configuration().configuration), "Configured background expression chord reaches the helper")
 	app._global_action("expression:0", true)
 	check(app.avatar.expression == 0, "Global expression command routes correctly")
 	app._global_action("ptt", true)

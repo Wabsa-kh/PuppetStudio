@@ -14,9 +14,10 @@ Download the latest Windows ZIP from [Releases](https://github.com/Wabsa-kh/Pupp
 
 - Quick four-image characters and separate-part layered characters
 - Microphone-driven talking, automatic blinking, expressions, and costumes
+- Per-expression focused and Windows background shortcuts, shown directly on the expression bar
 - Parent attachments, editable pivots, springs, idle motion, speech bounce, and pointer follow
 - Canvas tools for moving, rotating, scaling, and rigging parts
-- Motion clips with a playhead, key poses, easing, looping, and final-frame hold
+- A draggable pose timeline with saved-pose markers, easing, looping, and final-frame hold
 - PNG, JPEG, WebP, GIF, APNG, and sprite-sheet artwork
 - Per-part tint, opacity, mirroring, masks, and blend modes
 - Visual artwork browser with thumbnails and native Windows file pickers
@@ -29,9 +30,10 @@ Download the latest Windows ZIP from [Releases](https://github.com/Wabsa-kh/Pupp
 
 Choose **File → New character** and pick a setup:
 
-- **Quick character** uses idle, talking, blinking, and talking-while-blinking images.
-- **Layered character** assembles separate body, head, eye, mouth, and accessory images.
-- **Animated rig** starts with the layered tools and adds springs, costumes, and motion clips.
+- **Quick avatar** uses idle, talking, blinking, and talking-while-blinking images.
+- **Layered avatar** assembles separate body, head, eye, mouth, and accessory images, with attachments, movement, costumes, and saved-pose animation available when needed.
+
+Every expression button shows its assigned key. Click **Keys…** beside the expression list to change the focused key, set an optional Windows background shortcut, and choose Select, Hold, Toggle, or Timed behavior.
 
 The included Mochi project is a working example. Open it from **File → Open rig example** and try **Test voice**, **Blink**, the costume editor, and the motion editor.
 

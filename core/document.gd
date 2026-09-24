@@ -215,7 +215,8 @@ func validate(candidate: Variant) -> String:
 		for id in costume.layers:
 			if not id is String or not costume.layers[id] is bool:
 				return "Invalid costume visibility."
-	var hotkey_owners: Array = candidate.layers.duplicate()
+	var hotkey_owners: Array = candidate.expressions.duplicate()
+	hotkey_owners.append_array(candidate.layers)
 	hotkey_owners.append_array(costumes)
 	for owner in hotkey_owners:
 		for field in ["hotkey", "hotkey_mods"]:
@@ -224,6 +225,8 @@ func validate(candidate: Variant) -> String:
 		if int(owner.get("hotkey", 0)) < 0 or int(owner.get("hotkey", 0)) > 254 or int(owner.get("hotkey_mods", 3)) < 0 or int(owner.get("hotkey_mods", 3)) > 7:
 			return "Keyboard shortcut is out of range."
 	for expression in candidate.expressions:
+		if expression.has("key") and (not (expression.key is int or expression.key is float) or int(expression.key) < 0 or int(expression.key) > 254):
+			return "Expression shortcut is out of range."
 		if expression.has("trigger_mode") and (not expression.trigger_mode is float and not expression.trigger_mode is int):
 			return "Invalid expression trigger."
 		if int(expression.get("trigger_mode", 0)) not in [0, 1, 2, 3]:
@@ -231,6 +234,14 @@ func validate(candidate: Variant) -> String:
 		var seconds: Variant = expression.get("reaction_seconds", 2.0)
 		if not (seconds is float or seconds is int) or not is_finite(float(seconds)) or seconds < 0.1 or seconds > 60:
 			return "Invalid reaction duration."
+	var focused_keys: Dictionary = {}
+	for index in range(candidate.expressions.size()):
+		var focused_key := int(candidate.expressions[index].get("key", 49 + index if index < 9 else 0))
+		if focused_key == KEY_B:
+			return "B is reserved for blink."
+		if focused_key != 0 and focused_keys.has(focused_key):
+			return "Expression shortcuts must be unique."
+		if focused_key != 0: focused_keys[focused_key] = true
 	for layer in candidate.layers:
 		if not layer.has("clip"):
 			continue

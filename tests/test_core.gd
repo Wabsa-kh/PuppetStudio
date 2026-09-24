@@ -62,6 +62,15 @@ func _initialize() -> void:
 	invalid = restored.data.duplicate(true)
 	invalid.output_background = "not-a-color"
 	check(not restored.validate(invalid).is_empty(), "Malformed custom capture color rejected")
+	invalid = restored.data.duplicate(true)
+	invalid.expressions[0].key = KEY_A
+	var duplicate_expression: Dictionary = invalid.expressions[0].duplicate(true)
+	duplicate_expression.name = "Duplicate key"
+	invalid.expressions.append(duplicate_expression)
+	check(not restored.validate(invalid).is_empty(), "Duplicate focused expression shortcuts rejected")
+	invalid = restored.data.duplicate(true)
+	invalid.expressions[0].key = KEY_B
+	check(not restored.validate(invalid).is_empty(), "Blink key cannot also trigger an expression")
 	var malformed := FileAccess.open("user://broken_test.puppet", FileAccess.WRITE)
 	malformed.store_string("{broken")
 	malformed.close()
